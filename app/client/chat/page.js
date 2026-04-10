@@ -1,122 +1,74 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { getBooking, sendMessage, listenToMessages } from "@/lib/firestore";
-import { getStatusStyle, timeAgo } from "@/lib/utils";
-import { formatCurrency } from "@/lib/utils";
+import { sendMessage, listenToMessages, getBooking } from "@/lib/firestore";
 import BottomNav from "@/components/BottomNav";
+import { SendIcon, ArrowLeftIcon, Spinner } from "@/components/Icons";
 
 export default function ClientChat() {
+  const router       = useRouter();
   const searchParams = useSearchParams();
-  const bookingId = searchParams.get("bookingId");
-  const router = useRouter();
-  const { user } = useAuth();
-
-  const [booking, setBooking]   = useState(null);
+  const bookingId    = searchParams.get("bookingId");
+  const { user }     = useAuth();
   const [messages, setMessages] = useState([]);
   const [text, setText]         = useState("");
-  const [loading, setLoading]   = useState(true);
-  const bottomRef = useRef(null);
+  const [booking, setBooking]   = useState(null);
+  const [sending, setSending]   = useState(false);
+  const bottomRef = useRef();
 
   useEffect(() => {
-    if (!bookingId) return;
-    getBooking(bookingId).then(b => { setBooking(b); setLoading(false); });
-    const unsub = listenToMessages(bookingId, msgs => setMessages(msgs));
-    return () => unsub();
-  }, [bookingId]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (!bookingId || !user) return;
+    getBooking(bookingId).then(setBooking);
+    const unsub = listenToMessages(bookingId, msgs => {
+      setMessages(msgs);
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    });
+    return unsub;
+  }, [bookingId, user]);
 
   async function handleSend(e) {
     e.preventDefault();
-    if (!text.trim() || !user) return;
-    const msg = text.trim();
-    setText("");
-    await sendMessage(bookingId, {
-      senderId: user.uid,
-      senderRole: "client",
-      text: msg,
-    });
+    if (!text.trim() || !bookingId) return;
+    setSending(true);
+    await sendMessage(bookingId, { senderId: user.uid, senderRole: "client", text: text.trim() });
+    setText(""); setSending(false);
   }
-
-  if (!bookingId) {
-    return (
-      <div className="min-h-screen bg-[#f7f9fb] flex items-center justify-center">
-        <p className="text-[#45464d]">No booking selected.</p>
-      </div>
-    );
-  }
-
-  const status = booking ? getStatusStyle(booking.status) : null;
 
   return (
-    <div className="min-h-screen bg-[#f7f9fb] flex flex-col">
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col pb-16">
       {/* Header */}
-      <div className="bg-white border-b border-[#f2f4f6] px-5 py-4 flex items-center gap-3 sticky top-0 z-10">
-        <button onClick={() => router.back()} className="w-9 h-9 rounded-xl bg-[#f2f4f6] flex items-center justify-center hover:bg-[#e0e3e5] transition-colors flex-shrink-0">
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>arrow_back</span>
-        </button>
-        <div className="flex-1 min-w-0">
-          <p className="font-headline font-bold text-[#0F172A] truncate">{booking?.workerName || "Worker"}</p>
-          <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider flex items-center gap-1">
-            <span className="w-1.5 h-1.5 bg-green-500 rounded-full inline-block animate-pulse" />
-            ACTIVE NOW
-          </p>
-        </div>
-        <div className="w-10 h-10 rounded-full bg-[#f2f4f6] overflow-hidden flex items-center justify-center flex-shrink-0">
-          <span className="material-symbols-outlined text-[#76777d]" style={{ fontSize: 22 }}>person</span>
+      <div className="bg-white border-b border-[#E2E8F0] px-4 py-4 sticky top-0 z-40">
+        <div className="flex items-center gap-3">
+          <button onClick={() => router.back()} className="w-9 h-9 rounded-full bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-center text-[#64748B]">
+            <ArrowLeftIcon size={18}/>
+          </button>
+          <div className="flex-1">
+            <p className="font-bold text-[#0F172A]">{booking?.workerName || "Worker"}</p>
+            <p className="text-xs text-[#94A3B8]">{booking ? `Booking · ${booking.scheduledDate}` : "Loading…"}</p>
+          </div>
+          <div className="w-2.5 h-2.5 rounded-full bg-[#22C55E] ring-2 ring-[#DCFCE7]" />
         </div>
       </div>
 
-      {/* Job context card */}
-      {booking && (
-        <div className="mx-4 mt-4 bg-white rounded-2xl border-l-4 border-l-[#fd761a] border border-[#f2f4f6] p-4">
-          <p className="text-[10px] font-bold text-[#45464d] uppercase tracking-widest mb-1">Ongoing Project</p>
-          <h3 className="font-headline font-bold text-[#0F172A] text-base leading-tight mb-2">{booking.description}</h3>
-          <div className="flex items-center gap-4 text-xs text-[#45464d]">
-            <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined" style={{ fontSize: 13 }}>calendar_today</span>
-              {booking.date}
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined" style={{ fontSize: 13 }}>payments</span>
-              {formatCurrency(booking.offeredAmount)} Est.
-            </span>
-            {status && (
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4 pb-32">
-        {messages.length === 0 && !loading && (
-          <div className="text-center py-10">
-            <span className="material-symbols-outlined text-[#c6c6cd] block mb-2" style={{ fontSize: 40 }}>chat_bubble_outline</span>
-            <p className="text-sm text-[#45464d]">No messages yet. Start the conversation!</p>
+      <div className="flex-1 overflow-y-auto px-4 py-5 space-y-3">
+        {messages.length === 0 && (
+          <div className="text-center py-16">
+            <div className="text-5xl mb-3">💬</div>
+            <p className="font-bold text-[#0F172A] mb-1">Start the conversation</p>
+            <p className="text-sm text-[#94A3B8]">Messages with {booking?.workerName || "your worker"}</p>
           </div>
         )}
-
-        {messages.map(msg => {
-          const isMine = msg.senderId === user?.uid;
+        {messages.map((msg, i) => {
+          const isMe = msg.senderRole === "client";
           return (
-            <div key={msg.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
-              <div className="max-w-[78%]">
-                <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                  isMine
-                    ? "bg-[#131b2e] text-white rounded-br-sm"
-                    : "bg-[#f2f4f6] text-[#0F172A] rounded-bl-sm"
-                }`}>
-                  {msg.text}
-                </div>
-                <p className={`text-[10px] text-[#76777d] mt-1 ${isMine ? "text-right" : "text-left"}`}>
-                  {timeAgo(msg.createdAt)}
+            <div key={msg.id || i} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[78%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${isMe ? "bg-[#0F172A] text-white rounded-br-md" : "bg-white border border-[#E2E8F0] text-[#0F172A] rounded-bl-md shadow-sm"}`}>
+                {msg.text}
+                <p className={`text-[10px] mt-1.5 ${isMe ? "text-white/50" : "text-[#94A3B8]"}`}>
+                  {msg.createdAt?.toDate?.()?.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }) || ""}
                 </p>
               </div>
             </div>
@@ -126,20 +78,20 @@ export default function ClientChat() {
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSend}
-        className="fixed bottom-16 left-0 right-0 md:bottom-0 bg-white border-t border-[#f2f4f6] px-4 py-3 flex items-center gap-3">
-        <button type="button" className="w-9 h-9 rounded-full bg-[#f2f4f6] flex items-center justify-center text-[#45464d] hover:bg-[#e0e3e5] flex-shrink-0 transition-colors">
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>add</span>
-        </button>
-        <input type="text" value={text} onChange={e => setText(e.target.value)}
-          placeholder="Type a message…"
-          className="flex-1 bg-[#f2f4f6] rounded-2xl px-4 py-3 text-sm text-[#0F172A] outline-none placeholder:text-[#76777d]"
-        />
-        <button type="submit" disabled={!text.trim()}
-          className="w-10 h-10 rounded-full bg-[#F97316] flex items-center justify-center text-white hover:bg-[#e8680a] disabled:opacity-50 flex-shrink-0 transition-colors active:scale-95">
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>send</span>
-        </button>
-      </form>
+      <div className="bg-white border-t border-[#E2E8F0] px-4 py-3 sticky bottom-16 z-30">
+        <form onSubmit={handleSend} className="flex gap-3 items-end">
+          <div className="flex-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl px-4 py-3 focus-within:border-[#F97316] focus-within:ring-2 focus-within:ring-[#F97316]/10 transition-all">
+            <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Type a message…" rows={1}
+              onKeyDown={e => { if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); handleSend(e); } }}
+              className="w-full bg-transparent text-sm text-[#0F172A] outline-none resize-none placeholder:text-[#CBD5E1]"
+              style={{ maxHeight: 96, overflowY: "auto" }} />
+          </div>
+          <button type="submit" disabled={!text.trim() || sending}
+            className="w-11 h-11 rounded-2xl bg-[#F97316] flex items-center justify-center text-white hover:bg-[#EA580C] active:scale-90 transition-all disabled:opacity-40 flex-shrink-0">
+            {sending ? <Spinner size={16}/> : <SendIcon size={16}/>}
+          </button>
+        </form>
+      </div>
 
       <BottomNav role="client" />
     </div>

@@ -1,193 +1,158 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 import { getWorkerProfile, getWorkerReviews } from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
-import { getWorkerBadge, formatCurrency, timeAgo } from "@/lib/utils";
-import { useAuth } from "@/context/AuthContext";
+import { getWorkerBadge, formatCurrency } from "@/lib/utils";
+import {
+  StarIcon, MapPinIcon, CheckIcon, ArrowRightIcon, ArrowLeftIcon,
+  ShieldIcon, ClockIcon, WorkIcon, ChevronRightIcon
+} from "@/components/Icons";
 
-function StarRow({ rating, size = 16 }) {
+function Avatar({ name = "", photo, size = 80 }) {
+  const initials = name.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
+  const colors = ["#7C3AED","#0891B2","#059669","#DC2626","#D97706","#2563EB"];
+  const color  = colors[(name.charCodeAt(0)||0) % colors.length];
+  if (photo) return <img src={photo} alt={name} className="w-full h-full object-cover" style={{ borderRadius: "50%" }} />;
   return (
-    <div className="flex gap-0.5">
-      {[1,2,3,4,5].map(s => (
-        <span key={s} className="material-symbols-outlined"
-          style={{ fontSize: size, color: s <= Math.round(rating) ? "#f59e0b" : "#e0e3e5" }}>
-          star
-        </span>
-      ))}
+    <div style={{ width:size, height:size, background:color, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <span style={{ color:"white", fontWeight:800, fontSize:size*0.34 }}>{initials||"W"}</span>
     </div>
   );
 }
 
 export default function WorkerProfilePage() {
-  const { workerId } = useParams();
   const router = useRouter();
-  const { user } = useAuth();
-  const [worker, setWorker] = useState(null);
+  const params = useParams();
+  const workerId = params?.workerId;
+  const { user }  = useAuth();
+  const [worker, setWorker]   = useState(null);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
-      const [w, r] = await Promise.all([
-        getWorkerProfile(workerId),
-        getWorkerReviews(workerId),
-      ]);
-      setWorker(w);
-      setReviews(r);
-      setLoading(false);
-    }
-    load();
+    if (!workerId) return;
+    Promise.all([getWorkerProfile(workerId), getWorkerReviews(workerId)])
+      .then(([w, r]) => { setWorker(w); setReviews(r); setLoading(false); });
   }, [workerId]);
 
   if (loading) return (
-    <div className="min-h-screen bg-[#f7f9fb] flex items-center justify-center">
-      <div className="animate-spin w-10 h-10 rounded-full border-4 border-[#131b2e] border-t-transparent" />
+    <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
+      <div className="animate-spin w-10 h-10 rounded-full border-4 border-[#0F172A] border-t-transparent" />
     </div>
   );
-
   if (!worker) return (
-    <div className="min-h-screen bg-[#f7f9fb] flex flex-col items-center justify-center gap-4">
-      <span className="material-symbols-outlined text-[#c6c6cd]" style={{ fontSize: 64 }}>person_off</span>
-      <p className="font-headline font-bold text-[#0F172A]">Worker not found</p>
-      <button onClick={() => router.back()} className="text-[#F97316] font-bold">← Go back</button>
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center text-center p-6">
+      <div className="text-6xl mb-4">👤</div>
+      <p className="font-bold text-[#0F172A] mb-2">Worker not found</p>
+      <button onClick={() => router.back()} className="text-[#F97316] font-semibold text-sm">← Go back</button>
     </div>
   );
 
   const badge = getWorkerBadge(worker.completedJobs || 0);
+  const skills = (worker.skills || []).map(id => SERVICE_CATEGORIES.find(c => c.id === id)).filter(Boolean);
+  const rating = worker.averageRating?.toFixed(1);
 
   return (
-    <div className="min-h-screen bg-[#f7f9fb] pb-28">
+    <div className="min-h-screen bg-[#F8FAFC] pb-28">
       {/* Cover */}
-      <div className="h-48 bg-gradient-to-br from-[#131b2e] to-[#1e3560] relative">
-        <button onClick={() => router.back()} className="absolute top-5 left-5 w-9 h-9 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center text-white hover:bg-white/30 transition-colors z-10">
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>arrow_back</span>
+      <div className="h-44 bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A] relative">
+        <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage:"radial-gradient(circle at 1px 1px,white 1px,transparent 0)",backgroundSize:"28px 28px" }}/>
+        <button onClick={() => router.back()} className="absolute top-4 left-4 w-9 h-9 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-colors">
+          <ArrowLeftIcon size={18}/>
         </button>
-        {/* Decorative */}
-        <div className="absolute top-0 right-0 w-48 h-48 bg-[#fd761a]/10 rounded-full -translate-y-1/2 translate-x-1/4 pointer-events-none" />
       </div>
 
-      {/* Profile photo */}
-      <div className="px-5">
-        <div className="relative -mt-14 mb-4">
-          <div className="w-28 h-28 rounded-3xl bg-[#f2f4f6] border-4 border-white shadow-lg overflow-hidden flex items-center justify-center">
-            {worker.profilePhoto
-              ? <img src={worker.profilePhoto} alt={worker.name} className="w-full h-full object-cover" />
-              : <span className="material-symbols-outlined text-[#76777d]" style={{ fontSize: 40 }}>person</span>
-            }
+      {/* Profile info */}
+      <div className="px-4 -mt-14 relative z-10 mb-5">
+        <div className="flex items-end justify-between mb-4">
+          <div className="w-24 h-24 rounded-full border-4 border-white bg-white shadow-lg overflow-hidden flex-shrink-0">
+            <Avatar name={worker.name} photo={worker.profilePhoto} size={96} />
           </div>
           {worker.isVerified && (
-            <div className="absolute -bottom-1 -right-1 bg-blue-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
-              <span className="material-symbols-outlined" style={{ fontSize: 10 }}>verified</span> Verified
-            </div>
+            <span className="flex items-center gap-1.5 bg-[#F0FDF4] border border-[#BBF7D0] text-[#16A34A] text-xs font-bold px-3 py-1.5 rounded-full">
+              <ShieldIcon size={13}/> Aadhaar Verified
+            </span>
           )}
         </div>
-
-        {/* Name + info */}
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <h1 className="font-headline font-bold text-2xl text-[#0F172A]">{worker.name}</h1>
-            {worker.aadhaarStatus === "verified" && (
-              <div className="flex items-center gap-1 mt-0.5">
-                <span className="material-symbols-outlined text-green-500" style={{ fontSize: 14 }}>verified_user</span>
-                <span className="text-xs font-bold text-green-600">Aadhaar Verified</span>
-              </div>
-            )}
-          </div>
-          <div className="text-right">
-            <p className="font-headline font-bold text-xl text-[#F97316]">{formatCurrency(worker.ratePerHour || 0)}</p>
-            <p className="text-[10px] text-[#76777d]">per hour</p>
-          </div>
+        <h1 className="font-black text-2xl text-[#0F172A] mb-1">{worker.name}</h1>
+        <div className="flex items-center gap-3 text-sm text-[#64748B] mb-3">
+          {rating && <span className="flex items-center gap-1 text-amber-500 font-bold"><StarIcon size={14} fill="#F59E0B"/> {rating} ({worker.totalReviews || 0})</span>}
+          <span className="flex items-center gap-1"><MapPinIcon size={13}/> {worker.area || "—"}</span>
+        </div>
+        {/* Skills */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          {skills.map(s => (
+            <span key={s.id} className="flex items-center gap-1 bg-[#FFF7ED] border border-[#FED7AA] text-[#C2410C] text-xs font-bold px-3 py-1 rounded-full">
+              {s.icon} {s.label}
+            </span>
+          ))}
         </div>
 
-        {/* Skill chips */}
-        <div className="flex flex-wrap gap-2 mb-3">
-          {(worker.skills || []).map(s => {
-            const cat = SERVICE_CATEGORIES.find(c => c.id === s);
-            return cat ? (
-              <span key={s} className="flex items-center gap-1 bg-[#fd761a]/10 text-[#9d4300] text-xs font-bold px-3 py-1 rounded-full">
-                <span>{cat.icon}</span> {cat.label}
-              </span>
-            ) : null;
-          })}
-        </div>
-
-        {/* Rating row */}
-        <div className="flex items-center gap-3 mb-3">
-          <StarRow rating={worker.averageRating || 0} />
-          <span className="font-bold text-[#0F172A] text-sm">{worker.averageRating?.toFixed(1) || "—"}</span>
-          <span className="text-xs text-[#76777d]">({worker.totalReviews || 0} reviews)</span>
-        </div>
-
-        {/* Badge + area */}
-        <div className="flex items-center gap-3 mb-5">
-          <span className="text-xs font-bold bg-[#f2f4f6] text-[#45464d] px-3 py-1.5 rounded-full">{badge.icon} {badge.label}</span>
-          <div className="flex items-center gap-1 text-xs text-[#45464d]">
-            <span className="material-symbols-outlined" style={{ fontSize: 13 }}>location_on</span>
-            {worker.area}
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        {/* Stats row */}
+        <div className="grid grid-cols-3 gap-3">
           {[
-            { val: worker.completedJobs || 0, label: "Jobs Done", icon: "work" },
-            { val: worker.experience || "—", label: "Experience", icon: "schedule" },
-            { val: "95%", label: "Response Rate", icon: "bolt" },
+            { icon:<WorkIcon size={16}/>, val: worker.completedJobs || 0, label:"Jobs Done" },
+            { icon:<ClockIcon size={16}/>, val: worker.experience || "—",  label:"Experience" },
+            { icon:<StarIcon size={16}/>,  val: badge.icon+" "+badge.label, label:"Badge" },
           ].map(s => (
-            <div key={s.label} className="bg-white rounded-2xl p-3 text-center shadow-sm border border-[#f2f4f6]">
-              <span className="material-symbols-outlined text-[#fd761a] mb-1 block" style={{ fontSize: 20 }}>{s.icon}</span>
-              <p className="font-headline font-bold text-[#0F172A] text-lg leading-tight">{s.val}</p>
-              <p className="text-[10px] text-[#76777d] uppercase tracking-wide">{s.label}</p>
+            <div key={s.label} className="bg-white rounded-2xl border border-[#E2E8F0] p-3 text-center">
+              <div className="text-[#94A3B8] flex justify-center mb-1.5">{s.icon}</div>
+              <p className="font-black text-[#0F172A] text-sm">{s.val}</p>
+              <p className="text-[10px] text-[#94A3B8] mt-0.5">{s.label}</p>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="px-4 space-y-4">
+        {/* Rate */}
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-[#64748B]">Hourly Rate</span>
+            <span className="font-black text-2xl text-[#F97316]">{formatCurrency(worker.ratePerHour || 0)}<span className="text-sm text-[#94A3B8] font-normal">/hr</span></span>
+          </div>
         </div>
 
         {/* About */}
         {worker.bio && (
-          <div className="mb-6">
-            <h2 className="font-headline font-bold text-base text-[#0F172A] mb-2">About</h2>
-            <p className="text-sm text-[#45464d] leading-relaxed">{worker.bio}</p>
+          <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
+            <h3 className="font-bold text-[#0F172A] mb-2">About</h3>
+            <p className="text-sm text-[#64748B] leading-relaxed">{worker.bio}</p>
           </div>
         )}
 
         {/* Reviews */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-headline font-bold text-base text-[#0F172A]">Client Reviews</h2>
-            <span className="text-xs text-[#76777d]">{reviews.length} total</span>
-          </div>
-
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
+          <h3 className="font-bold text-[#0F172A] mb-4">Reviews ({reviews.length})</h3>
           {reviews.length === 0 ? (
-            <div className="bg-white rounded-2xl p-6 text-center border border-[#f2f4f6]">
-              <span className="material-symbols-outlined text-[#c6c6cd] block mb-2" style={{ fontSize: 40 }}>rate_review</span>
-              <p className="text-sm text-[#45464d]">No reviews yet</p>
-            </div>
+            <p className="text-sm text-[#94A3B8] text-center py-4">No reviews yet — be the first to book!</p>
           ) : (
-            <div className="flex flex-col gap-3">
-              {reviews.slice(0, 5).map(r => (
-                <div key={r.id} className="bg-white rounded-2xl p-4 shadow-sm border border-[#f2f4f6]">
-                  <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-full bg-[#f2f4f6] flex items-center justify-center flex-shrink-0">
-                      <span className="material-symbols-outlined text-[#76777d]" style={{ fontSize: 20 }}>person</span>
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <StarRow rating={r.rating} size={13} />
-                        <span className="text-[10px] text-[#76777d]">{timeAgo(r.createdAt)}</span>
+            <div className="space-y-4">
+              {reviews.slice(0,5).map((r, i) => (
+                <div key={i} className="border-b border-[#F1F5F9] pb-4 last:border-0 last:pb-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-[#F1F5F9] flex items-center justify-center text-xs font-bold text-[#64748B]">
+                        {r.clientName?.[0] || "C"}
                       </div>
-                      {r.comment && <p className="text-xs text-[#45464d] mt-1.5 leading-relaxed">{r.comment}</p>}
-                      {(r.tags || []).length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {r.tags.map(tag => (
-                            <span key={tag} className="text-[9px] font-bold bg-green-50 text-green-700 px-2 py-0.5 rounded-full">{tag}</span>
-                          ))}
+                      <div>
+                        <p className="text-sm font-semibold text-[#0F172A]">{r.clientName || "Client"}</p>
+                        <div className="flex gap-0.5 mt-0.5">
+                          {[1,2,3,4,5].map(s => <StarIcon key={s} size={10} fill={r.rating >= s ? "#F59E0B" : "none"} className={r.rating >= s ? "text-amber-400" : "text-[#E2E8F0]"}/>)}
                         </div>
-                      )}
+                      </div>
                     </div>
                   </div>
+                  {r.tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {r.tags.map(t => <span key={t} className="text-[10px] bg-[#F8FAFC] border border-[#E2E8F0] text-[#64748B] px-2 py-0.5 rounded-full">{t}</span>)}
+                    </div>
+                  )}
+                  {r.comment && <p className="text-xs text-[#64748B] leading-relaxed">{r.comment}</p>}
                 </div>
               ))}
             </div>
@@ -195,12 +160,18 @@ export default function WorkerProfilePage() {
         </div>
       </div>
 
-      {/* Fixed book button */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-[#f2f4f6] shadow-[0_-4px_20px_rgba(15,23,42,0.08)]">
-        <Link href={`/booking/${workerId}`}
-          className="block w-full bg-[#131b2e] text-white py-4 rounded-2xl font-headline font-bold text-base text-center hover:bg-[#1e2a45] active:scale-[0.98] transition-all">
-          Book Now →
-        </Link>
+      {/* Sticky Book Now */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-t border-[#E2E8F0] px-4 py-4">
+        <div className="flex items-center justify-between max-w-sm mx-auto">
+          <div>
+            <p className="text-xs text-[#94A3B8]">Starting from</p>
+            <p className="font-black text-[#0F172A] text-xl">{formatCurrency(worker.ratePerHour || 0)}<span className="text-xs text-[#94A3B8] font-normal">/hr</span></p>
+          </div>
+          <Link href={user ? `/booking/${workerId}` : "/login"}
+            className="bg-[#0F172A] text-white px-8 py-3.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-[#1E293B] active:scale-95 transition-all">
+            Book Now <ArrowRightIcon size={16}/>
+          </Link>
+        </div>
       </div>
     </div>
   );

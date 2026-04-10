@@ -2,449 +2,239 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { SERVICE_CATEGORIES, TRANSLATIONS } from "@/lib/constants";
+import { SearchIcon, MenuIcon, XIcon, ChevronRightIcon, CheckIcon, ArrowRightIcon, ShieldIcon, StarIcon, ZapIcon, MapPinIcon } from "@/components/Icons";
 
-/* ─── Material Symbol helper ───────────────────────────── */
-function Icon({ name, size = 24, className = "" }) {
-  return (
-    <span
-      className={`material-symbols-outlined select-none ${className}`}
-      style={{ fontSize: size, lineHeight: 1 }}
-    >
-      {name}
-    </span>
-  );
-}
-
-/* ─── Map category id → Material Symbol name ───────────── */
 const CAT_SYMBOL = {
-  electrician:     "electrical_services",
-  plumber:         "plumbing",
-  carpenter:       "carpenter",
-  painter:         "imagesearch_roller",
-  mason:           "construction",
-  ac_repair:       "ac_unit",
-  appliance_repair:"home_repair_service",
-  tile_fitter:     "grid_view",
-  welder:          "whatshot",
-  gardener:        "yard",
-  pest_control:    "pest_control",
-  house_cleaner:   "cleaning_services",
-  packers_movers:  "local_shipping",
-  mechanic:        "car_repair",
-  ro_repair:       "water_drop",
-  false_ceiling:   "roofing",
-  flooring:        "texture",
+  electrician:"⚡", plumber:"🔧", carpenter:"🪚", painter:"🎨", mason:"🧱",
+  ac_repair:"❄️", appliance_repair:"📱", tile_fitter:"⬜", welder:"🔥",
+  gardener:"🌿", pest_control:"🐛", house_cleaner:"🧹", packers_movers:"📦",
+  mechanic:"🚗", ro_repair:"💧", false_ceiling:"🏠", flooring:"🪵",
 };
 
-const HOW_IT_WORKS = [
-  {
-    num: 1,
-    titleKey: "Pick a Service",
-    desc: "Browse 50+ categories and select exactly what you need done today.",
-  },
-  {
-    num: 2,
-    titleKey: "Connect with Pros",
-    desc: "Chat with verified workers near you. Compare ratings and prices instantly.",
-  },
-  {
-    num: 3,
-    titleKey: "Get it Done",
-    desc: "Pay securely through the app only after you are 100% satisfied with the work.",
-  },
+const HOW = [
+  { n:1, title:"Choose a service", desc:"Browse 50+ categories and find exactly who you need.", icon:"🔍" },
+  { n:2, title:"Book instantly",   desc:"Pick a time, confirm details—done in under 2 minutes.", icon:"⚡" },
+  { n:3, title:"Get it done",      desc:"Pay securely only after you're satisfied. Guaranteed.", icon:"✅" },
 ];
 
 export default function LandingPage() {
-  const [lang, setLang]       = useState("en");
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [lang, setLang]     = useState("en");
+  const [menu, setMenu]     = useState(false);
   const t = TRANSLATIONS[lang];
   const isHi = lang === "hi";
 
-  const toggleLang = () => setLang((l) => (l === "en" ? "hi" : "en"));
-
   return (
-    <>
-      {/* ── Global font imports ─────────────────────────── */}
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A]">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800;900&family=Inter:wght@400;500;600&family=Noto+Sans+Devanagari:wght@400;500;700&display=swap');
-
-        .material-symbols-outlined{font-family:'Material Symbols Outlined';font-style:normal;font-weight:normal;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;-webkit-font-smoothing:antialiased;}
-        .font-headline{font-family:'Manrope',sans-serif;}
-        .font-deva{font-family:'Noto Sans Devanagari',sans-serif;}
-        .scrollbar-hide::-webkit-scrollbar{display:none;}
-        .scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none;}
-        body{background:#f7f9fb;}
+        @keyframes fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+        .fade-up { animation: fadeUp 0.5s ease forwards; }
+        .fade-up-2 { animation: fadeUp 0.5s 0.1s ease both; }
+        .fade-up-3 { animation: fadeUp 0.5s 0.2s ease both; }
       `}</style>
 
-      <div className="bg-[#f7f9fb] min-h-screen text-[#191c1e] relative">
+      {/* ── NAVBAR ── */}
+      <nav className="bg-white/90 backdrop-blur-md border-b border-[#E2E8F0] sticky top-0 z-50 px-5 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setMenu(true)} className="text-[#64748B] hover:text-[#0F172A] lg:hidden">
+            <MenuIcon size={22}/>
+          </button>
+          <Link href="/" className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-[#0F172A] rounded-xl flex items-center justify-center">
+              <span className="text-white font-black text-sm">B</span>
+            </div>
+            <span className="font-black text-[#0F172A] text-xl tracking-tight">Bixit</span>
+          </Link>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setLang(l => l==="en"?"hi":"en")}
+            className="text-xs font-bold text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0] hover:border-[#CBD5E1] px-3 py-1.5 rounded-full transition-all">
+            {lang === "en" ? "EN | हिं" : "हिं | EN"}
+          </button>
+          <Link href="/login" className="hidden sm:block text-sm font-semibold text-[#374151] hover:text-[#0F172A] transition-colors">
+            Sign in
+          </Link>
+          <Link href="/register" className="bg-[#0F172A] text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-[#1E293B] transition-colors">
+            Get Started
+          </Link>
+        </div>
+      </nav>
 
-        {/* ════════════════════════════════════════════════
-            NAVBAR
-        ════════════════════════════════════════════════ */}
-        <nav className="bg-[#f7f9fb] sticky top-0 z-50 flex justify-between items-center px-5 h-16 w-full border-b border-[#e0e3e5]/60 backdrop-blur-sm bg-[#f7f9fb]/90">
-          <div className="flex items-center gap-3">
-            <button
-              id="hamburger-btn"
-              onClick={() => setMenuOpen(true)}
-              className="text-[#0F172A] hover:text-[#F97316] transition-colors p-1 -ml-1"
-              aria-label="Open menu"
-            >
-              <Icon name="menu" size={26} />
-            </button>
-            <Link href="/" className="font-headline font-black text-[#0F172A] text-2xl tracking-tight">
-              Bixit
+      {/* Mobile slide menu */}
+      {menu && (
+        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm" onClick={() => setMenu(false)}>
+          <div className="bg-white w-72 h-full p-8 shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-10">
+              <span className="font-black text-2xl text-[#0F172A]">Bixit</span>
+              <button onClick={() => setMenu(false)} className="text-[#94A3B8] hover:text-[#0F172A]"><XIcon size={22}/></button>
+            </div>
+            <div className="space-y-1 flex-1">
+              {[{label:"Home", href:"/"},{label:"Sign in", href:"/login"},{label:"Register", href:"/register"}].map(item => (
+                <Link key={item.href} href={item.href} onClick={() => setMenu(false)}
+                  className="flex items-center justify-between py-3 px-4 rounded-xl text-[#374151] font-medium hover:bg-[#FFF7ED] hover:text-[#F97316] transition-colors">
+                  {item.label}<ChevronRightIcon size={16}/>
+                </Link>
+              ))}
+            </div>
+            <p className="text-xs text-[#94A3B8]">© 2025 Bixit Technologies</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── HERO ── */}
+      <section className="px-5 pt-16 pb-16 relative overflow-hidden max-w-5xl mx-auto">
+        <div className="absolute -right-20 top-0 w-80 h-80 bg-[#F97316]/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -left-20 bottom-0 w-60 h-60 bg-[#0F172A]/3 rounded-full blur-3xl pointer-events-none" />
+        <div className="relative max-w-2xl fade-up">
+          <div className="inline-flex items-center gap-2 bg-[#FFF7ED] border border-[#FED7AA] text-[#C2410C] text-xs font-bold px-3 py-1.5 rounded-full mb-6 uppercase tracking-wider">
+            <ShieldIcon size={13}/> Aadhaar Verified Workers
+          </div>
+          <h1 className={`font-black text-5xl sm:text-6xl leading-[1.05] tracking-tight mb-6 ${isHi ? "text-4xl" : ""}`}>
+            {t.findWorker || "Find Trusted\nWorkers, Instantly."}
+          </h1>
+          <p className="text-[#64748B] text-lg leading-relaxed mb-10 max-w-lg">
+            {isHi
+              ? "मिनटों में सत्यापित प्लंबर, इलेक्ट्रीशियन से जुड़ें। आपकी दहलीज पर कुशल श्रमिक।"
+              : "Connect with verified plumbers, electricians & professionals in minutes. Skilled labor at your doorstep."}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 max-w-sm fade-up-2">
+            <Link href="/login" id="cta-client"
+              className="flex-1 bg-[#0F172A] text-white py-4 px-6 rounded-2xl font-bold text-base flex items-center justify-between hover:bg-[#1E293B] active:scale-[0.98] transition-all shadow-lg shadow-[#0F172A]/20">
+              <span>{t.iNeedWorker || "I Need a Worker"}</span><ArrowRightIcon size={20}/>
+            </Link>
+            <Link href="/login?role=worker" id="cta-worker"
+              className="flex-1 bg-white text-[#0F172A] py-4 px-6 rounded-2xl font-bold text-base flex items-center justify-between border-2 border-[#E2E8F0] hover:border-[#0F172A] active:scale-[0.98] transition-all">
+              <span>{t.imWorker || "I'm a Worker"}</span><ArrowRightIcon size={20}/>
             </Link>
           </div>
+        </div>
 
-          <div className="flex items-center gap-5">
-            <button
-              id="lang-toggle"
-              onClick={toggleLang}
-              className="font-headline font-bold text-[#0F172A] text-sm hover:text-[#F97316] transition-colors px-2 py-1 rounded-lg hover:bg-[#F97316]/10"
-            >
-              {lang === "en" ? "EN | हिं" : "हिं | EN"}
-            </button>
-            <Link
-              href="/login"
-              id="nav-login"
-              className="text-[#F97316] font-bold text-sm hover:opacity-75 transition-opacity"
-            >
-              Login
-            </Link>
-          </div>
-        </nav>
-
-        {/* ── Mobile slide-out menu ────────────────────── */}
-        {menuOpen && (
-          <div
-            className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm"
-            onClick={() => setMenuOpen(false)}
-          >
-            <div
-              className="bg-white w-72 h-full p-8 shadow-2xl flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-10">
-                <span className="font-headline font-black text-2xl text-[#0F172A]">Bixit</span>
-                <button onClick={() => setMenuOpen(false)} className="text-[#45464d] hover:text-[#F97316] transition-colors">
-                  <Icon name="close" size={24} />
-                </button>
-              </div>
-              <ul className="space-y-1 flex-1">
-                {[
-                  { label: "Home", href: "/" },
-                  { label: "Login", href: "/login" },
-                  { label: "Register", href: "/register" },
-                ].map((item) => (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      onClick={() => setMenuOpen(false)}
-                      className="flex items-center gap-3 py-3 px-3 rounded-xl text-[#0F172A] font-medium hover:bg-[#F97316]/10 hover:text-[#F97316] transition-colors"
-                    >
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-xs text-[#76777d] mt-auto">© 2025 Bixit. All rights reserved.</p>
-            </div>
-          </div>
-        )}
-
-        <main className="w-full pb-28">
-
-          {/* ════════════════════════════════════════════
-              HERO SECTION
-          ════════════════════════════════════════════ */}
-          <section className="px-6 pt-12 pb-10 bg-[#f7f9fb] overflow-hidden relative">
-            {/* Decorative blobs */}
-            <div className="absolute -right-16 top-10 w-72 h-72 bg-[#fd761a]/8 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute -left-10 bottom-0 w-48 h-48 bg-[#131b2e]/5 rounded-full blur-2xl pointer-events-none" />
-
-            <div className="relative z-10 max-w-2xl">
-              {/* Pill badge */}
-              <div className="inline-flex items-center gap-1.5 bg-[#fd761a]/10 text-[#9d4300] text-xs font-bold px-3 py-1.5 rounded-full mb-5 font-headline uppercase tracking-wider">
-                <Icon name="verified" size={14} />
-                Aadhaar Verified Workers
-              </div>
-
-              <h1
-                className={`font-headline font-extrabold text-[2.6rem] leading-[1.08] text-[#0F172A] tracking-tight mb-4 ${isHi ? "font-deva" : ""}`}
-              >
-                {t.findWorker}
-              </h1>
-
-              <p className="text-[#45464d] text-[1.05rem] mb-10 max-w-[88%] leading-relaxed">
-                {isHi
-                  ? "मिनटों में सत्यापित प्लंबर, इलेक्ट्रीशियन और पेशेवरों से जुड़ें। अपनी दहलीज पर कुशल मजदूर।"
-                  : "Connect with verified plumbers, electricians, and professionals in minutes. Skilled labor at your doorstep."}
-              </p>
-
-              <div className="flex flex-col gap-3.5 max-w-sm">
-                <Link
-                  href="/login"
-                  id="cta-need-worker"
-                  className={`bg-[#131b2e] text-white py-4 px-7 rounded-2xl font-bold text-[1.05rem] flex items-center justify-between shadow-lg shadow-[#131b2e]/20 hover:bg-[#1e2a45] active:scale-[0.97] transition-all duration-150 ${isHi ? "font-deva" : "font-headline"}`}
-                >
-                  <span>{t.iNeedWorker}</span>
-                  <Icon name="arrow_forward" size={22} />
-                </Link>
-
-                <Link
-                  href="/login"
-                  id="cta-im-worker"
-                  className={`bg-white text-[#0F172A] border border-[#c6c6cd]/60 py-4 px-7 rounded-2xl font-bold text-[1.05rem] flex items-center justify-between hover:border-[#F97316]/50 hover:text-[#F97316] active:scale-[0.97] transition-all duration-150 ${isHi ? "font-deva" : "font-headline"}`}
-                >
-                  <span>{t.imWorker}</span>
-                  <Icon name="engineering" size={22} />
-                </Link>
-              </div>
-            </div>
-          </section>
-
-          {/* ════════════════════════════════════════════
-              TRUST BADGES
-          ════════════════════════════════════════════ */}
-          <section className="bg-[#f2f4f6] py-5 px-6 overflow-x-auto scrollbar-hide">
-            <div className="flex gap-7 items-center min-w-max">
-              {[
-                { icon: "verified_user", label: t.verified || "Aadhaar Verified" },
-                { icon: "star", label: "Top Rated" },
-                { icon: "shield", label: "100% Safe" },
-                { icon: "payments", label: "Flexible Payment" },
-              ].map((b) => (
-                <div key={b.label} className="flex items-center gap-2 opacity-60 flex-shrink-0">
-                  <Icon name={b.icon} size={16} className="text-[#0F172A]" />
-                  <span className={`text-[10px] uppercase tracking-[0.12em] font-bold text-[#0F172A] ${isHi ? "font-deva" : ""}`}>
-                    {b.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* ════════════════════════════════════════════
-              POPULAR SERVICES
-          ════════════════════════════════════════════ */}
-          <section className="px-5 py-12">
-            <div className="flex justify-between items-end mb-7">
-              <h2 className="font-headline font-bold text-[1.45rem] text-[#0F172A]">
-                Popular Services
-              </h2>
-              <Link
-                href="/login"
-                className="text-[#9d4300] font-bold text-sm hover:opacity-75 transition-opacity flex items-center gap-0.5"
-              >
-                View All <Icon name="chevron_right" size={18} />
-              </Link>
-            </div>
-
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
-              {SERVICE_CATEGORIES.map((cat) => (
-                <Link
-                  key={cat.id}
-                  href="/login"
-                  className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl aspect-square shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-[#F97316]/30 border border-transparent active:scale-95 transition-all duration-150 group"
-                >
-                  <span
-                    className="material-symbols-outlined text-[#fd761a] mb-1.5 group-hover:scale-110 transition-transform duration-150"
-                    style={{ fontSize: 22 }}
-                  >
-                    {CAT_SYMBOL[cat.id] || "home_repair_service"}
-                  </span>
-                  <span className="text-[9.5px] font-semibold text-center text-[#191c1e] leading-tight">
-                    {cat.label}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </section>
-
-          {/* ════════════════════════════════════════════
-              HOW IT WORKS
-          ════════════════════════════════════════════ */}
-          <section className="bg-[#f2f4f6] px-6 py-16">
-            <h2 className="font-headline font-bold text-3xl mb-12 text-center text-[#0F172A]">
-              How it works
-            </h2>
-
-            <div className="space-y-10 max-w-lg mx-auto">
-              {HOW_IT_WORKS.map((step, i) => (
-                <div key={step.num} className="flex gap-5 items-start">
-                  <div className="flex-shrink-0 w-12 h-12 bg-[#0F172A] text-white rounded-full flex items-center justify-center font-headline font-bold text-xl shadow-lg shadow-[#0F172A]/20">
-                    {step.num}
-                  </div>
-                  <div className="pt-1">
-                    <h3 className="font-headline font-bold text-[1.15rem] mb-1.5 text-[#0F172A]">
-                      {step.titleKey}
-                    </h3>
-                    <p className="text-[#45464d] leading-relaxed text-sm">{step.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* ════════════════════════════════════════════
-              WORKER OF THE MONTH
-          ════════════════════════════════════════════ */}
-          <section className="px-5 py-14">
-            <div className="bg-[#131b2e] rounded-[2rem] p-8 text-white relative overflow-hidden">
-              {/* Decorative shapes */}
-              <div className="absolute -right-8 -top-8 w-44 h-44 bg-[#fd761a]/10 rounded-full pointer-events-none" />
-              <div className="absolute right-8 bottom-6 w-20 h-20 bg-white/5 rounded-full pointer-events-none" />
-              <div className="absolute right-14 top-10 text-7xl opacity-[0.07] select-none pointer-events-none">⚡</div>
-
-              <div className="relative z-10">
-                <span className="bg-[#fd761a] text-white px-3.5 py-1.5 rounded-full text-[10px] uppercase font-headline font-black tracking-widest">
-                  Worker of the Month
-                </span>
-
-                <h3 className="text-[2rem] font-headline font-bold mt-5 mb-1.5 leading-tight">
-                  Ramesh Kumar
-                </h3>
-                <p className="text-[#7c839b] text-base mb-7">
-                  Expert Electrician · 4.9 ★ · 250+ Jobs
-                </p>
-
-                {/* Stats row */}
-                <div className="flex gap-5 mb-8">
-                  {[
-                    { icon: "star", val: "4.9", sub: "Rating" },
-                    { icon: "work", val: "250+", sub: "Jobs" },
-                    { icon: "verified_user", val: "Aadhaar", sub: "Verified" },
-                  ].map((s) => (
-                    <div key={s.sub} className="flex flex-col items-start">
-                      <div className="flex items-center gap-1 text-[#fd761a] mb-0.5">
-                        <Icon name={s.icon} size={14} />
-                        <span className="font-headline font-bold text-sm text-white">{s.val}</span>
-                      </div>
-                      <span className="text-[10px] text-[#7c839b] uppercase tracking-wider">{s.sub}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <Link
-                  href="/login"
-                  id="worker-profile-btn"
-                  className="bg-white text-[#131b2e] px-7 py-3 rounded-xl font-headline font-bold inline-flex items-center gap-2 hover:bg-[#f2f4f6] active:scale-95 transition-all duration-150"
-                >
-                  View Profile
-                  <Icon name="arrow_forward" size={18} className="text-[#131b2e]" />
-                </Link>
-              </div>
-            </div>
-          </section>
-
-          {/* ════════════════════════════════════════════
-              FOOTER
-          ════════════════════════════════════════════ */}
-          <footer className="bg-[#e0e3e5] px-6 pt-14 pb-8">
-            <div className="mb-10">
-              <Link href="/" className="font-headline font-black text-[#0F172A] text-3xl">
-                Bixit
-              </Link>
-              <p className="text-[#45464d] mt-3 max-w-xs text-sm leading-relaxed">
-                Empowering local skilled labor through technology and trust.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-8 mb-10">
-              <div className="space-y-3">
-                <h4 className="font-headline font-bold text-xs uppercase tracking-widest text-[#0F172A]">
-                  Company
-                </h4>
-                <ul className="space-y-2 text-[#45464d] text-sm">
-                  {["About Us", "Careers", "Terms of Service", "Privacy Policy"].map((item) => (
-                    <li key={item}>
-                      <Link href="#" className="hover:text-[#F97316] transition-colors">
-                        {item}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="space-y-3">
-                <h4 className="font-headline font-bold text-xs uppercase tracking-widest text-[#0F172A]">
-                  Services
-                </h4>
-                <ul className="space-y-2 text-[#45464d] text-sm">
-                  {["Home Repair", "Personal Care", "Events", "Transport"].map((item) => (
-                    <li key={item}>
-                      <Link href="#" className="hover:text-[#F97316] transition-colors">
-                        {item}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                aria-label="Share"
-                className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-[#0F172A] hover:bg-[#F97316] hover:text-white transition-colors shadow-sm"
-              >
-                <Icon name="share" size={18} />
-              </button>
-              <button
-                aria-label="Toggle language"
-                onClick={toggleLang}
-                className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-[#0F172A] hover:bg-[#F97316] hover:text-white transition-colors shadow-sm"
-              >
-                <Icon name="language" size={18} />
-              </button>
-            </div>
-
-            <p className="text-[#76777d] text-xs mt-10 text-center">
-              © 2025 Bixit Technologies Pvt. Ltd. All rights reserved.
-            </p>
-          </footer>
-        </main>
-
-        {/* ════════════════════════════════════════════
-            BOTTOM NAVIGATION BAR (mobile)
-        ════════════════════════════════════════════ */}
-        <nav
-          id="bottom-nav"
-          className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-5 pt-3 bg-white/85 backdrop-blur-xl shadow-[0px_-2px_24px_rgba(15,23,42,0.07)] rounded-t-3xl border-t border-[#e0e3e5]/50"
-        >
+        {/* Trust badges */}
+        <div className="flex items-center gap-6 mt-10 overflow-x-auto scrollbar-hide pb-1 fade-up-3">
           {[
-            { icon: "home",       label: "Home",     href: "/",      active: true  },
-            { icon: "event_note", label: "Bookings", href: "/login", active: false },
-            { icon: "chat_bubble",label: "Chat",     href: "/login", active: false },
-            { icon: "person",     label: "Profile",  href: "/login", active: false },
-          ].map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              id={`bottom-nav-${item.label.toLowerCase()}`}
-              className={`flex flex-col items-center justify-center gap-0.5 transition-colors min-w-[3.5rem] ${
-                item.active ? "text-[#0F172A]" : "text-slate-400 hover:text-[#F97316]"
-              }`}
-            >
-              <Icon
-                name={item.icon}
-                size={24}
-                className={item.active ? "text-[#0F172A]" : ""}
-              />
-              <span
-                className={`text-[10px] font-medium tracking-wide ${
-                  item.active ? "font-semibold text-[#0F172A]" : ""
-                }`}
-              >
-                {item.label}
+            { icon:<ShieldIcon size={14}/>, label:"Aadhaar Verified" },
+            { icon:<StarIcon size={14}/>, label:"Top Rated" },
+            { icon:<CheckIcon size={14}/>, label:"100% Safe" },
+            { icon:<ZapIcon size={14}/>, label:"Instant Booking" },
+          ].map(b => (
+            <div key={b.label} className="flex items-center gap-1.5 text-[#64748B] text-xs font-semibold flex-shrink-0">
+              <span className="text-[#94A3B8]">{b.icon}</span>{b.label}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── POPULAR SERVICES ── */}
+      <section className="px-5 py-14 max-w-5xl mx-auto">
+        <div className="flex items-end justify-between mb-8">
+          <h2 className="font-black text-3xl text-[#0F172A]">Popular Services</h2>
+          <Link href="/login" className="text-sm font-bold text-[#F97316] hover:underline flex items-center gap-1">
+            View all <ChevronRightIcon size={16}/>
+          </Link>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+          {SERVICE_CATEGORIES.map(cat => (
+            <Link key={cat.id} href="/login"
+              className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl border border-[#E2E8F0] aspect-square hover:shadow-md hover:border-[#F97316]/40 hover:-translate-y-0.5 active:scale-95 transition-all duration-200 group">
+              <span className="text-2xl mb-2 transition-transform group-hover:scale-110 duration-200">
+                {CAT_SYMBOL[cat.id] || cat.icon || "🔧"}
               </span>
-              {item.active && (
-                <span className="w-1 h-1 bg-[#F97316] rounded-full" />
-              )}
+              <span className="text-[9.5px] font-bold text-center text-[#374151] leading-tight">{cat.label}</span>
             </Link>
           ))}
-        </nav>
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ── */}
+      <section className="bg-white border-y border-[#E2E8F0] px-5 py-16">
+        <div className="max-w-3xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="font-black text-3xl text-[#0F172A]">How Bixit works</h2>
+            <p className="text-[#64748B] mt-2">Book a skilled worker in 3 simple steps</p>
+          </div>
+          <div className="space-y-8">
+            {HOW.map((step, i) => (
+              <div key={step.n} className="flex gap-6 items-start">
+                <div className="flex-shrink-0 w-14 h-14 bg-[#0F172A] text-white rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-[#0F172A]/20">
+                  {step.icon}
+                </div>
+                <div className="pt-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-bold text-[#F97316] uppercase tracking-wider">Step {step.n}</span>
+                  </div>
+                  <h3 className="font-bold text-xl text-[#0F172A] mb-1.5">{step.title}</h3>
+                  <p className="text-[#64748B] leading-relaxed">{step.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── WORKER OF THE MONTH ── */}
+      <section className="px-5 py-16 max-w-5xl mx-auto">
+        <div className="bg-[#0F172A] rounded-3xl p-8 relative overflow-hidden">
+          <div className="absolute -right-12 -top-12 w-52 h-52 bg-[#F97316]/10 rounded-full pointer-events-none" />
+          <div className="absolute right-6 bottom-4 w-24 h-24 bg-white/5 rounded-full pointer-events-none" />
+          <div className="relative">
+            <span className="inline-block bg-[#F97316] text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full mb-5">
+              Worker of the Month
+            </span>
+            <h3 className="text-white font-black text-3xl mb-1">Ramesh Kumar</h3>
+            <p className="text-[#475569] mb-6">Expert Electrician · Mumbai</p>
+            <div className="flex gap-6 mb-7">
+              {[{ val:"4.9★", sub:"Rating" },{ val:"250+", sub:"Jobs Done" },{ val:"✓", sub:"Aadhaar" }].map(s => (
+                <div key={s.sub}>
+                  <p className="text-white font-black text-xl">{s.val}</p>
+                  <p className="text-[#475569] text-xs mt-0.5">{s.sub}</p>
+                </div>
+              ))}
+            </div>
+            <Link href="/login" className="inline-flex items-center gap-2 bg-white text-[#0F172A] px-6 py-3 rounded-xl font-bold text-sm hover:bg-[#F8FAFC] active:scale-95 transition-all">
+              View Profile <ArrowRightIcon size={16}/>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FOOTER ── */}
+      <footer className="bg-white border-t border-[#E2E8F0] px-5 py-14 max-w-5xl mx-auto">
+        <div className="flex flex-col sm:flex-row justify-between gap-8 mb-10">
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 bg-[#0F172A] rounded-xl flex items-center justify-center"><span className="text-white font-black text-sm">B</span></div>
+              <span className="font-black text-[#0F172A] text-xl">Bixit</span>
+            </div>
+            <p className="text-[#64748B] text-sm max-w-xs leading-relaxed">Empowering skilled labor through technology and trust.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-8">
+            {[
+              { title:"Company", links:["About Us","Careers","Press","Blog"] },
+              { title:"Legal",   links:["Terms","Privacy","Cookies","Security"] },
+            ].map(col => (
+              <div key={col.title}>
+                <h4 className="text-xs font-bold text-[#0F172A] uppercase tracking-widest mb-3">{col.title}</h4>
+                <ul className="space-y-2">
+                  {col.links.map(l => <li key={l}><Link href="#" className="text-sm text-[#64748B] hover:text-[#F97316] transition-colors">{l}</Link></li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="border-t border-[#F1F5F9] pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-xs text-[#94A3B8]">© 2025 Bixit Technologies Pvt. Ltd. All rights reserved.</p>
+          <button onClick={() => setLang(l => l==="en"?"hi":"en")} className="text-xs font-semibold text-[#64748B] hover:text-[#F97316] border border-[#E2E8F0] px-3 py-1.5 rounded-full transition-colors">
+            {lang==="en"?"🇮🇳 हिन्दी में देखें":"🇺🇸 View in English"}
+          </button>
+        </div>
+      </footer>
+
+      {/* Mobile sticky CTA */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-sm border-t border-[#E2E8F0] px-4 py-3 flex gap-3 lg:hidden">
+        <Link href="/login" className="flex-1 bg-[#0F172A] text-white py-3 rounded-xl font-bold text-sm text-center hover:bg-[#1E293B]">Find Workers</Link>
+        <Link href="/register?role=worker" className="flex-1 border-2 border-[#0F172A] text-[#0F172A] py-3 rounded-xl font-bold text-sm text-center hover:bg-[#F8FAFC]">Join as Worker</Link>
       </div>
-    </>
+    </div>
   );
 }

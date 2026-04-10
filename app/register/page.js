@@ -2,346 +2,355 @@
 
 import { useState, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { createUserWithEmailAndPassword, RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { createClientProfile, createWorkerProfile } from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
+import CityAutocomplete from "@/components/CityAutocomplete";
+import {
+  MailIcon, LockIcon, EyeIcon, EyeOffIcon, UserIcon, PhoneIcon,
+  CameraIcon, UploadIcon, BadgeIcon, ArrowRightIcon, Spinner, CheckIcon, AlertCircleIcon
+} from "@/components/Icons";
 
-function Spinner() {
-  return <svg className="animate-spin h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>;
+function mapError(code) {
+  const m = {
+    "auth/email-already-in-use": "An account with this email already exists.",
+    "auth/invalid-email":        "Invalid email address.",
+    "auth/weak-password":        "Password must be at least 6 characters.",
+  };
+  return m[code] || "Registration failed. Please try again.";
 }
 
-function Input({ label, icon, ...props }) {
+function Field({ label, icon, right, error, hint, className = "", children }) {
   return (
-    <div>
-      {label && <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">{label}</label>}
-      <div className="flex items-center bg-white border border-[#e0e3e5] rounded-xl px-4 py-3.5 focus-within:border-[#131b2e] transition-colors">
-        {icon && <span className="material-symbols-outlined text-[#76777d] mr-2" style={{ fontSize: 18 }}>{icon}</span>}
-        <input className="flex-1 bg-transparent text-[#0F172A] text-sm outline-none placeholder:text-[#c6c6cd]" {...props} />
+    <div className={`relative ${className}`}>
+      {label && <label className="block text-xs font-semibold text-[#374151] uppercase tracking-wide mb-2">{label}</label>}
+      <div className={`flex items-center bg-white border rounded-xl transition-all duration-200 ${error ? "border-[#EF4444] ring-1 ring-[#EF4444]/20" : "border-[#E2E8F0] focus-within:border-[#F97316] focus-within:ring-2 focus-within:ring-[#F97316]/10"}`}>
+        {icon && <span className="pl-4 text-[#94A3B8] flex-shrink-0">{icon}</span>}
+        {children}
+        {right}
       </div>
+      {error && <p className="text-[#EF4444] text-xs mt-1.5 flex items-center gap-1"><AlertCircleIcon size={12}/>{error}</p>}
+      {hint && !error && <p className="text-[#94A3B8] text-xs mt-1.5">{hint}</p>}
     </div>
+  );
+}
+
+function Input({ label, icon, rightEl, error, hint, ...props }) {
+  return (
+    <Field label={label} icon={icon} right={rightEl} error={error} hint={hint}>
+      <input className="flex-1 px-3 py-3.5 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#CBD5E1] w-full" {...props} />
+    </Field>
+  );
+}
+
+function PasswordInput({ label, value, onChange, placeholder, error, autoComplete }) {
+  const [show, setShow] = useState(false);
+  return (
+    <Field label={label} icon={<LockIcon size={17}/>}
+      right={<button type="button" onClick={() => setShow(s => !s)} className="pr-4 text-[#94A3B8] hover:text-[#64748B] flex-shrink-0">{show ? <EyeOffIcon size={17}/> : <EyeIcon size={17}/>}</button>}
+      error={error}>
+      <input type={show ? "text" : "password"} value={value} onChange={onChange} placeholder={placeholder} autoComplete={autoComplete}
+        className="flex-1 px-3 py-3.5 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#CBD5E1] w-full" />
+    </Field>
   );
 }
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [tab, setTab]         = useState("client");
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("role") === "worker" ? "worker" : "client";
+  const [tab, setTab]         = useState(initialTab);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
 
-  /* ── Client form state ─────────────────── */
+  /* Client */
   const [cName, setCName]       = useState("");
   const [cEmail, setCEmail]     = useState("");
   const [cPhone, setCPhone]     = useState("");
+  const [cCity, setCCity]       = useState("");
   const [cPass, setCPass]       = useState("");
   const [cConfirm, setCConfirm] = useState("");
-  const [cArea, setCArea]       = useState("");
 
-  /* ── Worker form state ─────────────────── */
-  const [wPhoto, setWPhoto]     = useState(null);
-  const [wName, setWName]       = useState("");
-  const [wPhone, setWPhone]     = useState("");
-  const [wArea, setWArea]       = useState("");
-  const [wSkills, setWSkills]   = useState([]);
-  const [wExp, setWExp]         = useState("");
-  const [wRate, setWRate]       = useState("");
-  const [wAadhaar, setWAadhaar] = useState("");
+  /* Worker */
+  const [wPhoto, setWPhoto]             = useState(null);
+  const [wName, setWName]               = useState("");
+  const [wEmail, setWEmail]             = useState("");
+  const [wPhone, setWPhone]             = useState("");
+  const [wCity, setWCity]               = useState("");
+  const [wPass, setWPass]               = useState("");
+  const [wConfirm, setWConfirm]         = useState("");
+  const [wSkills, setWSkills]           = useState([]);
+  const [wExp, setWExp]                 = useState("");
+  const [wRate, setWRate]               = useState("");
+  const [wAadhaar, setWAadhaar]         = useState("");
   const [wAadhaarFront, setWAadhaarFront] = useState(null);
   const [wAadhaarBack, setWAadhaarBack]   = useState(null);
-  const [wBio, setWBio]         = useState("");
-  const [wOtpSent, setWOtpSent] = useState(false);
-  const [wOtp, setWOtp]         = useState(["","","",""]);
-  const [wConfirmResult, setWConfirmResult] = useState(null);
-  const otpRefs = [useRef(), useRef(), useRef(), useRef()];
-  const photoRef = useRef();
+  const [wBio, setWBio]                 = useState("");
+  const photoRef  = useRef();
 
-  function handlePhotoChange(e, setter) {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setter(ev.target.result);
-    reader.readAsDataURL(file);
+  function readFile(file, setter) {
+    const r = new FileReader();
+    r.onload = ev => setter(ev.target.result);
+    r.readAsDataURL(file);
   }
 
   function toggleSkill(id) {
     setWSkills(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
   }
 
-  /* ── Client Register ───────────────────── */
-  async function handleClientRegister(e) {
-    e.preventDefault();
-    setError("");
-    if (cPass !== cConfirm) { setError("Passwords do not match."); return; }
-    if (cPass.length < 6)   { setError("Password must be at least 6 characters."); return; }
+  async function handleClient(e) {
+    e.preventDefault(); setError("");
+    if (!cName || !cEmail || !cPass) { setError("Please fill all required fields."); return; }
+    if (cPass !== cConfirm)           { setError("Passwords do not match."); return; }
+    if (cPass.length < 6)             { setError("Password must be at least 6 characters."); return; }
     setLoading(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, cEmail, cPass);
-      await createClientProfile(cred.user.uid, {
-        name: cName, email: cEmail, phone: cPhone, area: cArea,
-      });
+      await createClientProfile(cred.user.uid, { name: cName, email: cEmail, phone: cPhone, area: cCity });
       router.push("/client/dashboard");
-    } catch (err) {
-      setError(
-        err.code === "auth/email-already-in-use" ? "An account with this email already exists." :
-        err.code === "auth/invalid-email"         ? "Invalid email address." :
-        "Registration failed. Please try again."
-      );
-    } finally { setLoading(false); }
+    } catch (err) { setError(mapError(err.code)); }
+    finally { setLoading(false); }
   }
 
-  /* ── Worker: Send OTP ──────────────────── */
-  async function handleWorkerSendOTP() {
-    if (!wPhone || wPhone.length < 10) { setError("Enter a valid 10-digit phone number."); return; }
-    if (!wName || !wArea || wSkills.length === 0 || !wExp || !wRate || !wAadhaar) {
-      setError("Please fill all required fields before OTP verification."); return;
-    }
-    if (wAadhaar.length !== 12) { setError("Aadhaar number must be exactly 12 digits."); return; }
-    setError(""); setLoading(true);
+  async function handleWorker(e) {
+    e.preventDefault(); setError("");
+    if (!wName || !wEmail || !wPass)   { setError("Please fill all required fields."); return; }
+    if (wSkills.length === 0)           { setError("Please select at least one skill."); return; }
+    if (!wExp || !wRate)                { setError("Please fill experience and hourly rate."); return; }
+    if (wPass !== wConfirm)             { setError("Passwords do not match."); return; }
+    if (wPass.length < 6)               { setError("Password must be at least 6 characters."); return; }
+    if (wAadhaar && wAadhaar.length !== 12) { setError("Aadhaar must be 12 digits."); return; }
+    setLoading(true);
     try {
-      if (!window.recaptchaVerifier) {
-        window.recaptchaVerifier = new RecaptchaVerifier(auth, "w-recaptcha", { size: "invisible", callback: () => {} });
-      }
-      const result = await signInWithPhoneNumber(auth, `+91${wPhone}`, window.recaptchaVerifier);
-      setWConfirmResult(result);
-      setWOtpSent(true);
-    } catch (err) {
-      setError("Failed to send OTP. Please try again.");
-      if (window.recaptchaVerifier) { window.recaptchaVerifier.clear(); window.recaptchaVerifier = null; }
-    } finally { setLoading(false); }
-  }
-
-  /* ── Worker: Verify & Register ─────────── */
-  async function handleWorkerVerify() {
-    const otpStr = wOtp.join("");
-    if (otpStr.length < 4) { setError("Enter the 4-digit OTP."); return; }
-    setError(""); setLoading(true);
-    try {
-      const cred = await wConfirmResult.confirm(otpStr);
+      const cred = await createUserWithEmailAndPassword(auth, wEmail, wPass);
       await createWorkerProfile(cred.user.uid, {
-        name: wName, phone: wPhone, area: wArea,
-        skills: wSkills, experience: wExp,
-        ratePerHour: Number(wRate),
-        aadhaarNumber: wAadhaar,
-        aadhaarFrontPhoto: wAadhaarFront || "",
-        aadhaarBackPhoto: wAadhaarBack || "",
-        bio: wBio,
-        profilePhoto: wPhoto || "",
+        name: wName, email: wEmail, phone: wPhone, area: wCity,
+        skills: wSkills, experience: wExp, ratePerHour: Number(wRate),
+        aadhaarNumber: wAadhaar, aadhaarFrontPhoto: wAadhaarFront || "",
+        aadhaarBackPhoto: wAadhaarBack || "", bio: wBio, profilePhoto: wPhoto || "",
       });
       router.push("/worker/dashboard");
-    } catch (err) {
-      setError("Verification failed. Please try again.");
-    } finally { setLoading(false); }
-  }
-
-  function handleOtpChange(i, val) {
-    if (!/^\d?$/.test(val)) return;
-    const next = [...wOtp]; next[i] = val; setWOtp(next);
-    if (val && i < 3) otpRefs[i + 1].current?.focus();
-    if (!val && i > 0) otpRefs[i - 1].current?.focus();
+    } catch (err) { setError(mapError(err.code)); }
+    finally { setLoading(false); }
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f9fb] pb-10">
-      <div id="w-recaptcha" />
-
-      {/* Header */}
-      <nav className="flex items-center justify-between px-5 h-14 bg-white border-b border-gray-100 sticky top-0 z-10">
-        <Link href="/" className="font-headline font-black text-[#0F172A] text-xl">Bixit</Link>
-        <Link href="/login" className="text-[#F97316] font-bold text-sm hover:underline">Login</Link>
-      </nav>
-
-      <div className="max-w-md mx-auto px-5 pt-8">
-        <div className="text-center mb-7">
-          <h1 className="font-headline font-bold text-2xl text-[#0F172A]">Create an account</h1>
-          <p className="text-[#45464d] text-sm mt-1">Join Bixit today</p>
-        </div>
-
-        {/* Tab */}
-        <div className="flex bg-[#f2f4f6] rounded-2xl p-1 mb-7">
-          {["client","worker"].map(t => (
-            <button key={t} onClick={() => { setTab(t); setError(""); setWOtpSent(false); }}
-              className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 ${tab === t ? "bg-white text-[#0F172A] shadow-sm" : "text-[#45464d]"}`}
-            >
-              {t === "client" ? "I'm a Client" : "I'm a Worker"}
-            </button>
-          ))}
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 mb-5">
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>error</span>
-            {error}
+    <div className="min-h-screen flex bg-white">
+      {/* Left panel — desktop */}
+      <div className="hidden lg:flex lg:w-[42%] bg-[#0F172A] flex-col relative overflow-hidden">
+        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: "radial-gradient(circle at 1px 1px,white 1px,transparent 0)", backgroundSize: "32px 32px" }} />
+        <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-[#F97316] rounded-full blur-[100px] opacity-10 pointer-events-none" />
+        <div className="relative z-10 flex flex-col h-full px-10 py-10">
+          <Link href="/" className="inline-flex items-center gap-2 mb-auto">
+            <div className="w-8 h-8 bg-[#F97316] rounded-lg flex items-center justify-center">
+              <span className="text-white font-black text-sm">B</span>
+            </div>
+            <span className="font-black text-white text-xl tracking-tight">Bixit</span>
+          </Link>
+          <div className="flex-1 flex flex-col justify-center">
+            <p className="text-[#F97316] text-xs font-bold uppercase tracking-[0.18em] mb-5">Join India's best</p>
+            <h1 className="text-white font-black text-4xl leading-tight tracking-tight mb-5">
+              {tab === "client" ? "Find workers\nyou can trust." : "Earn more,\nwork smarter."}
+            </h1>
+            <p className="text-[#64748B] leading-relaxed">
+              {tab === "client"
+                ? "Join 50,000+ clients who book verified skilled workers every day."
+                : "Join 2,000+ verified workers earning great income with Bixit."}
+            </p>
           </div>
-        )}
-
-        {/* ── CLIENT TAB ── */}
-        {tab === "client" && (
-          <form onSubmit={handleClientRegister} className="space-y-4">
-            <Input label="Full Name" icon="person" type="text" placeholder="Rahul Sharma" value={cName} onChange={e => setCName(e.target.value)} required />
-            <Input label="Email" icon="mail" type="email" placeholder="you@example.com" value={cEmail} onChange={e => setCEmail(e.target.value)} required />
-            <div>
-              <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">Phone</label>
-              <div className="flex items-center bg-white border border-[#e0e3e5] rounded-xl overflow-hidden focus-within:border-[#131b2e] transition-colors">
-                <span className="px-4 py-3.5 bg-[#f2f4f6] border-r border-[#e0e3e5] text-sm font-bold text-[#0F172A]">+91</span>
-                <input type="tel" placeholder="9876543210" value={cPhone} onChange={e => setCPhone(e.target.value.replace(/\D/g,"").slice(0,10))}
-                  className="flex-1 px-4 py-3.5 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#c6c6cd]" />
+          <div className="space-y-3">
+            {(tab === "client" ? ["Free to join", "Verified workers only", "Secure payments"] : ["Instant job alerts", "Get paid fast", "Build your reputation"]).map(p => (
+              <div key={p} className="flex items-center gap-3">
+                <div className="w-5 h-5 rounded-full bg-[#F97316]/20 flex items-center justify-center text-[#F97316] flex-shrink-0"><CheckIcon size={12}/></div>
+                <span className="text-[#94A3B8] text-sm">{p}</span>
               </div>
-            </div>
-            <Input label="Area / Locality" icon="location_on" type="text" placeholder="e.g. Andheri West, Mumbai" value={cArea} onChange={e => setCArea(e.target.value)} required />
-            <Input label="Password" icon="lock" type="password" placeholder="Min. 6 characters" value={cPass} onChange={e => setCPass(e.target.value)} required />
-            <Input label="Confirm Password" icon="lock" type="password" placeholder="Repeat password" value={cConfirm} onChange={e => setCConfirm(e.target.value)} required />
-            <button type="submit" disabled={loading}
-              className="w-full bg-[#131b2e] text-white py-4 rounded-2xl font-headline font-bold text-base hover:bg-[#1e2a45] active:scale-[0.98] transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-            >
-              {loading && <Spinner />}
-              {loading ? "Creating account…" : "Create Client Account"}
-            </button>
-          </form>
-        )}
+            ))}
+          </div>
+        </div>
+      </div>
 
-        {/* ── WORKER TAB ── */}
-        {tab === "worker" && (
-          <div className="space-y-5">
-            {/* Profile Photo */}
-            <div className="flex flex-col items-center">
-              <button type="button" onClick={() => photoRef.current.click()}
-                className="w-24 h-24 rounded-full bg-[#f2f4f6] border-2 border-dashed border-[#c6c6cd] flex items-center justify-center overflow-hidden hover:border-[#F97316] transition-colors"
-              >
-                {wPhoto
-                  ? <img src={wPhoto} alt="Profile" className="w-full h-full object-cover" />
-                  : <span className="material-symbols-outlined text-[#76777d]" style={{ fontSize: 32 }}>add_a_photo</span>
-                }
+      {/* Right panel */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-[420px] mx-auto px-6 py-10">
+          {/* Mobile logo */}
+          <div className="lg:hidden mb-8">
+            <Link href="/" className="inline-flex items-center gap-2">
+              <div className="w-8 h-8 bg-[#0F172A] rounded-lg flex items-center justify-center">
+                <span className="text-white font-black text-sm">B</span>
+              </div>
+              <span className="font-black text-[#0F172A] text-xl">Bixit</span>
+            </Link>
+          </div>
+
+          <h2 className="font-black text-[#0F172A] text-2xl tracking-tight mb-1">Create account</h2>
+          <p className="text-[#64748B] text-sm mb-7">
+            Already have one?{" "}
+            <Link href="/login" className="text-[#F97316] font-semibold hover:underline">Sign in</Link>
+          </p>
+
+          {/* Tabs */}
+          <div className="flex bg-[#F8FAFC] rounded-xl p-1 mb-7 border border-[#E2E8F0]">
+            {[{ id: "client", label: "I'm a Client" }, { id: "worker", label: "I'm a Worker" }].map(t => (
+              <button key={t.id} onClick={() => { setTab(t.id); setError(""); }}
+                className={`flex-1 py-2.5 rounded-[10px] text-sm font-semibold transition-all duration-200 ${t.id === tab ? "bg-[#0F172A] text-white shadow-sm" : "text-[#64748B] hover:text-[#0F172A]"}`}>
+                {t.label}
               </button>
-              <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={e => handlePhotoChange(e, setWPhoto)} />
-              <span className="text-xs text-[#45464d] mt-2">Tap to add profile photo</span>
+            ))}
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="flex items-start gap-2.5 bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] text-sm rounded-xl px-4 py-3 mb-5">
+              <AlertCircleIcon size={16}/> {error}
             </div>
+          )}
 
-            <Input label="Full Name *" icon="person" type="text" placeholder="Ramesh Kumar" value={wName} onChange={e => setWName(e.target.value)} required />
-
-            <div>
-              <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">Phone Number *</label>
-              <div className="flex items-center bg-white border border-[#e0e3e5] rounded-xl overflow-hidden focus-within:border-[#131b2e]">
-                <span className="px-4 py-3.5 bg-[#f2f4f6] border-r border-[#e0e3e5] text-sm font-bold text-[#0F172A]">+91</span>
-                <input type="tel" placeholder="9876543210" value={wPhone} onChange={e => setWPhone(e.target.value.replace(/\D/g,"").slice(0,10))}
-                  className="flex-1 px-4 py-3.5 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#c6c6cd]" />
-              </div>
-            </div>
-
-            <Input label="Area / Locality *" icon="location_on" type="text" placeholder="e.g. Bandra, Mumbai" value={wArea} onChange={e => setWArea(e.target.value)} required />
-
-            {/* Skills */}
-            <div>
-              <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-2">Your Skills * <span className="text-[#F97316]">({wSkills.length} selected)</span></label>
-              <div className="flex flex-wrap gap-2">
-                {SERVICE_CATEGORIES.map(cat => (
-                  <button key={cat.id} type="button" onClick={() => toggleSkill(cat.id)}
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-150 ${wSkills.includes(cat.id) ? "bg-[#fd761a] text-white shadow-sm" : "bg-white border border-[#e0e3e5] text-[#45464d] hover:border-[#fd761a]"}`}
-                  >
-                    <span>{cat.icon}</span> {cat.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Experience */}
-            <div>
-              <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">Experience *</label>
-              <div className="bg-white border border-[#e0e3e5] rounded-xl px-4 py-3.5 focus-within:border-[#131b2e]">
-                <select value={wExp} onChange={e => setWExp(e.target.value)} required
-                  className="w-full bg-transparent text-sm text-[#0F172A] outline-none">
-                  <option value="">Select experience</option>
-                  <option value="0-1 yr">0–1 Year</option>
-                  <option value="1-3 yrs">1–3 Years</option>
-                  <option value="3-5 yrs">3–5 Years</option>
-                  <option value="5+ yrs">5+ Years</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Rate */}
-            <div>
-              <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">Rate per Hour (₹) *</label>
-              <div className="flex items-center bg-white border border-[#e0e3e5] rounded-xl overflow-hidden focus-within:border-[#131b2e]">
-                <span className="px-4 py-3.5 bg-[#f2f4f6] border-r border-[#e0e3e5] text-sm font-bold text-[#0F172A]">₹</span>
-                <input type="number" placeholder="250" value={wRate} onChange={e => setWRate(e.target.value)} min="50"
-                  className="flex-1 px-4 py-3.5 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#c6c6cd]" />
-              </div>
-            </div>
-
-            {/* Aadhaar */}
-            <div>
-              <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">Aadhaar Number *</label>
-              <div className="flex items-center bg-white border border-[#e0e3e5] rounded-xl px-4 py-3.5 focus-within:border-[#131b2e]">
-                <span className="material-symbols-outlined text-[#76777d] mr-2" style={{ fontSize: 18 }}>badge</span>
-                <input type="text" inputMode="numeric" placeholder="12-digit Aadhaar number" maxLength={12}
-                  value={wAadhaar} onChange={e => setWAadhaar(e.target.value.replace(/\D/g,"").slice(0,12))}
-                  className="flex-1 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#c6c6cd]" />
-              </div>
-            </div>
-
-            {/* Aadhaar photos */}
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { label: "Aadhaar Front", state: wAadhaarFront, setter: setWAadhaarFront },
-                { label: "Aadhaar Back",  state: wAadhaarBack,  setter: setWAadhaarBack  },
-              ].map(({ label, state, setter }) => {
-                const ref = { current: null };
-                return (
-                  <div key={label}>
-                    <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">{label}</label>
-                    <label className={`flex flex-col items-center justify-center h-24 rounded-xl border-2 border-dashed cursor-pointer transition-colors overflow-hidden ${state ? "border-[#fd761a]" : "border-[#c6c6cd] hover:border-[#fd761a]"}`}>
-                      {state ? <img src={state} alt={label} className="w-full h-full object-cover" />
-                        : <><span className="material-symbols-outlined text-[#76777d]" style={{ fontSize: 28 }}>upload_file</span><span className="text-[10px] text-[#45464d] mt-1">Upload</span></>
-                      }
-                      <input type="file" accept="image/*" className="hidden" onChange={e => handlePhotoChange(e, setter)} />
-                    </label>
+          {/* ── CLIENT ── */}
+          {tab === "client" && (
+            <form onSubmit={handleClient} className="space-y-4" noValidate>
+              <Input label="Full Name *" icon={<UserIcon size={17}/>} type="text" placeholder="Rahul Sharma" value={cName} onChange={e => setCName(e.target.value)} />
+              <Input label="Email Address *" icon={<MailIcon size={17}/>} type="email" placeholder="you@example.com" value={cEmail} onChange={e => setCEmail(e.target.value)} />
+              {/* Phone */}
+              <div>
+                <label className="block text-xs font-semibold text-[#374151] uppercase tracking-wide mb-2">Phone Number</label>
+                <div className="flex items-center bg-white border border-[#E2E8F0] rounded-xl overflow-hidden focus-within:border-[#F97316] focus-within:ring-2 focus-within:ring-[#F97316]/10 transition-all">
+                  <div className="flex items-center gap-1.5 pl-4 pr-3 border-r border-[#E2E8F0] py-3.5 flex-shrink-0">
+                    <PhoneIcon size={17}/><span className="text-sm font-bold text-[#0F172A]">+91</span>
                   </div>
-                );
-              })}
-            </div>
+                  <input type="tel" inputMode="numeric" maxLength={10} value={cPhone} onChange={e => setCPhone(e.target.value.replace(/\D/g,"").slice(0,10))} placeholder="98765 43210"
+                    className="flex-1 px-4 py-3.5 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#CBD5E1]" />
+                </div>
+              </div>
+              <div className="relative"><CityAutocomplete value={cCity} onChange={setCCity} label="Your City" placeholder="Search your city…" /></div>
+              <PasswordInput label="Password *" value={cPass} onChange={e => setCPass(e.target.value)} placeholder="Min. 6 characters" autoComplete="new-password" />
+              <PasswordInput label="Confirm Password *" value={cConfirm} onChange={e => setCConfirm(e.target.value)} placeholder="Repeat password" autoComplete="new-password" />
+              <button type="submit" disabled={loading} className="w-full bg-[#0F172A] text-white py-3.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 hover:bg-[#1E293B] active:scale-[0.98] transition-all disabled:opacity-50 mt-2">
+                {loading ? <><Spinner size={18}/>Creating…</> : <><span>Create Client Account</span><ArrowRightIcon size={18}/></>}
+              </button>
+            </form>
+          )}
 
-            {/* Bio */}
-            <div>
-              <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">About / Bio</label>
-              <textarea placeholder="Describe your experience and expertise…" value={wBio} onChange={e => setWBio(e.target.value)} rows={3}
-                className="w-full bg-white border border-[#e0e3e5] rounded-xl px-4 py-3.5 text-sm text-[#0F172A] outline-none focus:border-[#131b2e] resize-none placeholder:text-[#c6c6cd] transition-colors" />
-            </div>
+          {/* ── WORKER ── */}
+          {tab === "worker" && (
+            <form onSubmit={handleWorker} className="space-y-5" noValidate>
+              {/* Profile photo */}
+              <div className="flex flex-col items-center py-2">
+                <button type="button" onClick={() => photoRef.current.click()}
+                  className="relative w-24 h-24 rounded-full bg-[#F8FAFC] border-2 border-dashed border-[#CBD5E1] flex items-center justify-center overflow-hidden hover:border-[#F97316] transition-colors group">
+                  {wPhoto ? <img src={wPhoto} alt="Profile" className="w-full h-full object-cover" />
+                    : <span className="text-[#94A3B8] group-hover:text-[#F97316] transition-colors"><CameraIcon size={28}/></span>}
+                  {wPhoto && <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><CameraIcon size={22}/></div>}
+                </button>
+                <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && readFile(e.target.files[0], setWPhoto)} />
+                <span className="text-xs text-[#94A3B8] mt-2">Profile photo (optional)</span>
+              </div>
 
-            {/* OTP section */}
-            {wOtpSent ? (
-              <div className="space-y-4">
-                <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider">OTP sent to +91{wPhone}</label>
-                <div className="flex gap-3 justify-center">
-                  {wOtp.map((d, i) => (
-                    <input key={i} ref={otpRefs[i]} type="text" inputMode="numeric" maxLength={1} value={d}
-                      onChange={e => handleOtpChange(i, e.target.value)}
-                      onKeyDown={e => e.key === "Backspace" && !wOtp[i] && i > 0 && otpRefs[i-1].current?.focus()}
-                      className="w-14 h-14 text-center text-2xl font-bold bg-white border-2 border-[#e0e3e5] rounded-2xl text-[#0F172A] outline-none focus:border-[#131b2e] transition-colors"
-                    />
+              <Input label="Full Name *" icon={<UserIcon size={17}/>} type="text" placeholder="Ramesh Kumar" value={wName} onChange={e => setWName(e.target.value)} />
+              <Input label="Email Address *" icon={<MailIcon size={17}/>} type="email" placeholder="you@example.com" value={wEmail} onChange={e => setWEmail(e.target.value)} />
+
+              <div>
+                <label className="block text-xs font-semibold text-[#374151] uppercase tracking-wide mb-2">
+                  Phone Number <span className="text-[#94A3B8] normal-case font-normal">(saved for clients)</span>
+                </label>
+                <div className="flex items-center bg-white border border-[#E2E8F0] rounded-xl overflow-hidden focus-within:border-[#F97316] focus-within:ring-2 focus-within:ring-[#F97316]/10 transition-all">
+                  <div className="flex items-center gap-1.5 pl-4 pr-3 border-r border-[#E2E8F0] py-3.5 flex-shrink-0">
+                    <PhoneIcon size={17}/><span className="text-sm font-bold text-[#0F172A]">+91</span>
+                  </div>
+                  <input type="tel" inputMode="numeric" maxLength={10} value={wPhone} onChange={e => setWPhone(e.target.value.replace(/\D/g,"").slice(0,10))} placeholder="98765 43210"
+                    className="flex-1 px-4 py-3.5 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#CBD5E1]" />
+                </div>
+              </div>
+
+              <div className="relative"><CityAutocomplete value={wCity} onChange={setWCity} label="Working Area *" placeholder="Search your city…" /></div>
+              <PasswordInput label="Password *" value={wPass} onChange={e => setWPass(e.target.value)} placeholder="Min. 6 characters" autoComplete="new-password" />
+              <PasswordInput label="Confirm Password *" value={wConfirm} onChange={e => setWConfirm(e.target.value)} placeholder="Repeat password" autoComplete="new-password" />
+
+              {/* Section divider */}
+              <div className="flex items-center gap-3 py-1">
+                <div className="flex-1 h-px bg-[#E2E8F0]" />
+                <span className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-widest">Professional Details</span>
+                <div className="flex-1 h-px bg-[#E2E8F0]" />
+              </div>
+
+              {/* Skills */}
+              <div>
+                <label className="block text-xs font-semibold text-[#374151] uppercase tracking-wide mb-3">
+                  Your Skills * {wSkills.length > 0 && <span className="text-[#F97316] normal-case font-normal">({wSkills.length} selected)</span>}
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {SERVICE_CATEGORIES.map(cat => (
+                    <button key={cat.id} type="button" onClick={() => toggleSkill(cat.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-150 ${wSkills.includes(cat.id) ? "bg-[#0F172A] text-white" : "bg-white border border-[#E2E8F0] text-[#374151] hover:border-[#F97316] hover:text-[#F97316]"}`}>
+                      <span>{cat.icon}</span> {cat.label}
+                    </button>
                   ))}
                 </div>
-                <button onClick={handleWorkerVerify} disabled={loading}
-                  className="w-full bg-[#131b2e] text-white py-4 rounded-2xl font-headline font-bold text-base hover:bg-[#1e2a45] active:scale-[0.98] transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  {loading && <Spinner />} {loading ? "Creating account…" : "Verify & Register"}
-                </button>
               </div>
-            ) : (
-              <button onClick={handleWorkerSendOTP} disabled={loading}
-                className="w-full bg-[#131b2e] text-white py-4 rounded-2xl font-headline font-bold text-base hover:bg-[#1e2a45] active:scale-[0.98] transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {loading && <Spinner />} {loading ? "Sending OTP…" : "Verify Phone & Register"}
-              </button>
-            )}
-          </div>
-        )}
 
-        <p className="text-center text-sm text-[#45464d] mt-8">
-          Already have an account?{" "}
-          <Link href="/login" className="text-[#F97316] font-bold hover:underline">Login</Link>
-        </p>
+              {/* Experience pills */}
+              <div>
+                <label className="block text-xs font-semibold text-[#374151] uppercase tracking-wide mb-3">Experience *</label>
+                <div className="flex gap-2 flex-wrap">
+                  {["0-1 yr","1-3 yrs","3-5 yrs","5+ yrs"].map(exp => (
+                    <button key={exp} type="button" onClick={() => setWExp(exp)}
+                      className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-150 border ${wExp === exp ? "bg-[#0F172A] text-white border-[#0F172A]" : "bg-white text-[#374151] border-[#E2E8F0] hover:border-[#0F172A]"}`}>
+                      {exp}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Rate */}
+              <div>
+                <label className="block text-xs font-semibold text-[#374151] uppercase tracking-wide mb-2">Rate per Hour (₹) *</label>
+                <div className="flex items-center bg-white border border-[#E2E8F0] rounded-xl overflow-hidden focus-within:border-[#F97316] focus-within:ring-2 focus-within:ring-[#F97316]/10 transition-all">
+                  <span className="px-4 py-3.5 bg-[#F8FAFC] border-r border-[#E2E8F0] text-sm font-bold text-[#374151]">₹</span>
+                  <input type="number" min="50" placeholder="250" value={wRate} onChange={e => setWRate(e.target.value)}
+                    className="flex-1 px-4 py-3.5 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#CBD5E1]" />
+                </div>
+              </div>
+
+              {/* Aadhaar */}
+              <Input label="Aadhaar Number" icon={<BadgeIcon size={17}/>} type="text" inputMode="numeric" placeholder="12-digit Aadhaar" maxLength={12}
+                value={wAadhaar} onChange={e => setWAadhaar(e.target.value.replace(/\D/g,"").slice(0,12))} />
+
+              {/* Aadhaar photos */}
+              <div className="grid grid-cols-2 gap-3">
+                {[{ label:"Aadhaar Front", state: wAadhaarFront, setter: setWAadhaarFront }, { label:"Aadhaar Back", state: wAadhaarBack, setter: setWAadhaarBack }].map(({ label, state, setter }) => (
+                  <div key={label}>
+                    <label className="block text-xs font-semibold text-[#374151] uppercase tracking-wide mb-2">{label}</label>
+                    <label className={`flex flex-col items-center justify-center h-24 rounded-xl border-2 border-dashed cursor-pointer transition-colors overflow-hidden ${state ? "border-[#F97316]" : "border-[#CBD5E1] hover:border-[#F97316]"}`}>
+                      {state ? <img src={state} alt={label} className="w-full h-full object-cover" />
+                        : <><span className="text-[#94A3B8]"><UploadIcon size={22}/></span><span className="text-[10px] text-[#94A3B8] mt-1">Tap to upload</span></>}
+                      <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && readFile(e.target.files[0], setter)} />
+                    </label>
+                  </div>
+                ))}
+              </div>
+
+              {/* Bio */}
+              <div>
+                <label className="block text-xs font-semibold text-[#374151] uppercase tracking-wide mb-2">About / Bio</label>
+                <textarea value={wBio} onChange={e => setWBio(e.target.value)} rows={3}
+                  placeholder="Describe your expertise and experience…"
+                  className="w-full bg-white border border-[#E2E8F0] rounded-xl px-4 py-3.5 text-sm text-[#0F172A] outline-none focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/10 resize-none placeholder:text-[#CBD5E1] transition-all" />
+              </div>
+
+              <button type="submit" disabled={loading}
+                className="w-full bg-[#0F172A] text-white py-3.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 hover:bg-[#1E293B] active:scale-[0.98] transition-all disabled:opacity-50">
+                {loading ? <><Spinner size={18}/>Creating…</> : <><span>Create Worker Account</span><ArrowRightIcon size={18}/></>}
+              </button>
+            </form>
+          )}
+
+          <p className="text-center text-xs text-[#94A3B8] mt-8">
+            By registering you agree to our{" "}
+            <Link href="/terms" className="underline underline-offset-2">Terms</Link> &amp;{" "}
+            <Link href="/privacy" className="underline underline-offset-2">Privacy Policy</Link>
+          </p>
+        </div>
       </div>
     </div>
   );

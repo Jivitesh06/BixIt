@@ -1,269 +1,234 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { getWorkerProfile, createBooking } from "@/lib/firestore";
+import { SERVICE_CATEGORIES } from "@/lib/constants";
 import { formatCurrency } from "@/lib/utils";
-import { PAYMENT_METHODS, SERVICE_CATEGORIES } from "@/lib/constants";
-
-function Spinner() {
-  return <svg className="animate-spin h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>;
-}
-
-function loadRazorpay() {
-  return new Promise(resolve => {
-    if (window.Razorpay) { resolve(true); return; }
-    const s = document.createElement("script");
-    s.src = "https://checkout.razorpay.com/v1/checkout.js";
-    s.onload = () => resolve(true);
-    s.onerror = () => resolve(false);
-    document.body.appendChild(s);
-  });
-}
+import {
+  ArrowLeftIcon, CalendarIcon, ClockIcon, MapPinIcon,
+  CreditCardIcon, CashIcon, CheckIcon, ArrowRightIcon, Spinner, AlertCircleIcon
+} from "@/components/Icons";
 
 export default function BookingPage() {
-  const { workerId } = useParams();
-  const router = useRouter();
-  const { user, userRole } = useAuth();
+  const router    = useRouter();
+  const params    = useParams();
+  const workerId  = params?.workerId;
+  const { user }  = useAuth();
 
-  const [worker, setWorker]         = useState(null);
-  const [loading, setLoading]       = useState(true);
+  const [worker, setWorker]   = useState(null);
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError]           = useState("");
+  const [error, setError]     = useState("");
 
-  const [description, setDescription] = useState("");
-  const [date, setDate]               = useState("");
-  const [time, setTime]               = useState("");
-  const [address, setAddress]         = useState("");
-  const [amount, setAmount]           = useState("");
-  const [payMethod, setPayMethod]     = useState("cash");
-
-  const today = new Date().toISOString().split("T")[0];
-  const platformFee  = amount ? Math.round(Number(amount) * 0.1) : 0;
-  const totalAmount  = amount ? Number(amount) + platformFee : 0;
+  const [services, setServices] = useState([]);
+  const [date, setDate]         = useState("");
+  const [time, setTime]         = useState("");
+  const [address, setAddress]   = useState("");
+  const [desc, setDesc]         = useState("");
+  const [payment, setPayment]   = useState("online");
+  const [hours, setHours]       = useState(2);
 
   useEffect(() => {
-    if (user && userRole === "worker") router.replace("/worker/dashboard");
-    if (!user) router.replace("/login");
-  }, [user, userRole]);
-
-  useEffect(() => {
-    async function load() {
-      const w = await getWorkerProfile(workerId);
-      setWorker(w);
-      if (w?.ratePerHour) setAmount(String(w.ratePerHour * 2));
-      setLoading(false);
-    }
-    load();
+    if (!workerId) return;
+    getWorkerProfile(workerId).then(w => { setWorker(w); setLoading(false); });
   }, [workerId]);
 
-  async function handleBooking() {
-    setError("");
-    if (!description || !date || !time || !address) {
-      setError("Please fill all required fields."); return;
-    }
-    if (!amount || Number(amount) < 1) {
-      setError("Enter a valid budget amount."); return;
-    }
-    setSubmitting(true);
-
-    const bookingData = {
-      clientId: user.uid,
-      workerId,
-      workerName: worker.name,
-      serviceType: (worker.skills || [])[0] || "general",
-      description, date, time, address,
-      offeredAmount: Number(amount),
-      finalAmount: totalAmount,
-      paymentMethod: payMethod,
-      paymentStatus: "pending",
-    };
-
-    try {
-      if (payMethod === "cash") {
-        const id = await createBooking(bookingData);
-        router.push("/client/bookings");
-      } else {
-        // Razorpay online payment
-        const ok = await loadRazorpay();
-        if (!ok) { setError("Payment gateway failed to load. Try again."); setSubmitting(false); return; }
-        const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY || "rzp_test_XXXXXXXX";
-        const options = {
-          key,
-          amount: totalAmount * 100,
-          currency: "INR",
-          name: "Bixit",
-          description: `Booking for ${worker.name}`,
-          handler: async (response) => {
-            const id = await createBooking({
-              ...bookingData,
-              paymentStatus: "paid",
-              paymentId: response.razorpay_payment_id,
-              status: "accepted",
-            });
-            router.push(`/payment-success?bookingId=${id}`);
-          },
-          prefill: { name: user.displayName || "", email: user.email || "" },
-          theme: { color: "#131b2e" },
-          modal: { ondismiss: () => setSubmitting(false) },
-        };
-        new window.Razorpay(options).open();
-        return;
-      }
-    } catch (err) {
-      setError("Something went wrong. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
+  function toggleService(id) {
+    setServices(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
   }
 
-  if (loading) return (
-    <div className="min-h-screen bg-[#f7f9fb] flex items-center justify-center">
-      <div className="animate-spin w-10 h-10 rounded-full border-4 border-[#131b2e] border-t-transparent" />
-    </div>
-  );
+  const workerSkills = (worker?.skills || []).map(id => SERVICE_CATEGORIES.find(c => c.id === id)).filter(Boolean);
+  const subtotal     = (worker?.ratePerHour || 0) * hours;
+  const platformFee  = Math.round(subtotal * 0.05);
+  const total        = subtotal + platformFee;
+
+  async function handleBook() {
+    setError("");
+    if (services.length === 0) { setError("Please select at least one service."); return; }
+    if (!date)    { setError("Please select a date."); return; }
+    if (!time)    { setError("Please select a time."); return; }
+    if (!address) { setError("Please enter your address."); return; }
+
+    setSubmitting(true);
+    try {
+      if (payment === "online" && typeof window !== "undefined") {
+        const script = document.createElement("script");
+        script.src = "https://checkout.razorpay.com/v1/checkout.js";
+        document.body.appendChild(script);
+        script.onload = () => {
+          const rzp = new window.Razorpay({
+            key: process.env.NEXT_PUBLIC_RAZORPAY_KEY || "rzp_test_XXXXXXXX",
+            amount: total * 100,
+            currency: "INR",
+            name: "Bixit",
+            description: `Booking: ${services.join(", ")}`,
+            handler: async () => {
+              await saveBooking("online_paid");
+              router.push("/payment-success");
+            },
+            prefill: { email: user?.email || "" },
+            theme: { color: "#F97316" },
+          });
+          rzp.open();
+          setSubmitting(false);
+        };
+      } else {
+        await saveBooking("cash");
+        router.push("/payment-success");
+      }
+    } catch (e) { setError("Booking failed. Please try again."); setSubmitting(false); }
+  }
+
+  async function saveBooking(paymentMode) {
+    await createBooking({
+      clientId: user.uid, workerId,
+      workerName: worker?.name, clientName: user?.displayName || "",
+      services, scheduledDate: date, scheduledTime: time,
+      address, description: desc,
+      hours, totalAmount: total, paymentMode,
+      status: "pending",
+    });
+  }
+
+  if (loading) return <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center"><div className="animate-spin w-10 h-10 rounded-full border-4 border-[#0F172A] border-t-transparent"/></div>;
 
   return (
-    <div className="min-h-screen bg-[#f7f9fb] pb-10">
+    <div className="min-h-screen bg-[#F8FAFC] pb-28">
       {/* Header */}
-      <nav className="flex items-center gap-3 px-5 h-14 bg-white border-b border-gray-100 sticky top-0 z-10">
-        <button onClick={() => router.back()} className="w-9 h-9 rounded-xl bg-[#f2f4f6] flex items-center justify-center hover:bg-[#e0e3e5] transition-colors">
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>arrow_back</span>
-        </button>
-        <span className="font-headline font-black text-[#0F172A] text-lg flex-1">Bixit</span>
-        <button className="text-sm font-bold text-[#45464d] hover:text-[#F97316]">EN | हिं</button>
-      </nav>
+      <div className="bg-white border-b border-[#E2E8F0] px-4 py-4 sticky top-0 z-40">
+        <div className="flex items-center gap-3">
+          <button onClick={() => router.back()} className="w-9 h-9 rounded-full bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-center text-[#64748B] hover:border-[#CBD5E1]">
+            <ArrowLeftIcon size={18}/>
+          </button>
+          <h1 className="font-bold text-[#0F172A]">Book Worker</h1>
+        </div>
+      </div>
 
-      <div className="max-w-md mx-auto px-5 pt-5">
-        {/* Worker mini card */}
+      <div className="max-w-md mx-auto px-4 py-5 space-y-5">
+        {/* Worker mini-card */}
         {worker && (
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#f2f4f6] mb-5 flex items-center gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-[#f2f4f6] overflow-hidden flex items-center justify-center flex-shrink-0">
-              {worker.profilePhoto
-                ? <img src={worker.profilePhoto} alt={worker.name} className="w-full h-full object-cover" />
-                : <span className="material-symbols-outlined text-[#76777d]" style={{ fontSize: 28 }}>person</span>
-              }
+          <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 flex items-center gap-3">
+            <div className="w-14 h-14 rounded-2xl bg-[#F1F5F9] flex items-center justify-center text-2xl font-black text-[#0F172A] overflow-hidden flex-shrink-0">
+              {worker.profilePhoto ? <img src={worker.profilePhoto} alt={worker.name} className="w-full h-full object-cover"/> : (worker.name?.[0] || "W")}
             </div>
             <div className="flex-1">
-              <p className="font-headline font-bold text-[#0F172A]">{worker.name}</p>
-              <p className="text-xs text-[#45464d]">
-                {SERVICE_CATEGORIES.find(c => c.id === (worker.skills||[])[0])?.label || "Professional"}
-              </p>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="flex items-center text-xs text-amber-500 font-bold">
-                  <span className="material-symbols-outlined" style={{ fontSize: 12 }}>star</span>
-                  {worker.averageRating?.toFixed(1) || "New"}
-                </span>
-                {worker.isVerified && (
-                  <span className="text-[9px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">VERIFIED</span>
-                )}
-              </div>
+              <p className="font-bold text-[#0F172A]">{worker.name}</p>
+              <p className="text-xs text-[#64748B]">{workerSkills[0]?.label || "Professional"}</p>
             </div>
-            <p className="text-[#F97316] font-bold text-sm">{formatCurrency(worker.ratePerHour || 0)}/hr</p>
+            <div className="text-right">
+              <p className="font-black text-[#F97316] text-lg">{formatCurrency(worker.ratePerHour || 0)}</p>
+              <p className="text-[10px] text-[#94A3B8]">per hour</p>
+            </div>
           </div>
         )}
 
-        {/* Error */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 mb-5 flex items-center gap-2">
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>error</span>
-            {error}
+        {/* Services */}
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
+          <p className="text-xs font-bold text-[#374151] uppercase tracking-wider mb-3">Select Services *</p>
+          <div className="flex flex-wrap gap-2">
+            {workerSkills.map(s => (
+              <button key={s.id} type="button" onClick={() => toggleService(s.id)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-all border ${services.includes(s.id) ? "bg-[#0F172A] text-white border-[#0F172A]" : "bg-[#F8FAFC] text-[#374151] border-[#E2E8F0] hover:border-[#F97316]"}`}>
+                {s.icon} {s.label} {services.includes(s.id) && <CheckIcon size={12}/>}
+              </button>
+            ))}
           </div>
-        )}
-
-        {/* Form */}
-        <div className="space-y-5">
-          {/* Description */}
-          <div>
-            <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">Job Description *</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4}
-              placeholder="Describe the issue or service required…"
-              className="w-full bg-white border border-[#e0e3e5] rounded-xl px-4 py-3.5 text-sm text-[#0F172A] outline-none focus:border-[#131b2e] resize-none placeholder:text-[#c6c6cd] transition-colors"
-            />
-          </div>
-
-          {/* Date + Time */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">Date *</label>
-              <input type="date" min={today} value={date} onChange={e => setDate(e.target.value)}
-                className="w-full bg-white border border-[#e0e3e5] rounded-xl px-4 py-3.5 text-sm text-[#0F172A] outline-none focus:border-[#131b2e] transition-colors" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">Time *</label>
-              <input type="time" value={time} onChange={e => setTime(e.target.value)}
-                className="w-full bg-white border border-[#e0e3e5] rounded-xl px-4 py-3.5 text-sm text-[#0F172A] outline-none focus:border-[#131b2e] transition-colors" />
-            </div>
-          </div>
-
-          {/* Address */}
-          <div>
-            <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">Service Address *</label>
-            <div className="flex items-center bg-white border border-[#e0e3e5] rounded-xl px-4 py-3.5 focus-within:border-[#131b2e] transition-colors">
-              <span className="material-symbols-outlined text-[#76777d] mr-2" style={{ fontSize: 18 }}>location_on</span>
-              <input type="text" value={address} onChange={e => setAddress(e.target.value)}
-                placeholder="House No, Street, Landmark"
-                className="flex-1 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#c6c6cd]" />
-            </div>
-          </div>
-
-          {/* Budget */}
-          <div>
-            <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-1.5">
-              Your Budget (₹) <span className="text-[#76777d] normal-case font-normal">Suggested: {formatCurrency((worker?.ratePerHour || 0) * 2)}</span>
-            </label>
-            <div className="flex items-center bg-white border border-[#e0e3e5] rounded-xl overflow-hidden focus-within:border-[#131b2e] transition-colors">
-              <span className="px-4 py-3.5 bg-[#f2f4f6] border-r border-[#e0e3e5] text-sm font-bold text-[#0F172A]">₹</span>
-              <input type="number" value={amount} onChange={e => setAmount(e.target.value)} min="1"
-                placeholder="0.00"
-                className="flex-1 px-4 py-3.5 bg-transparent text-sm text-[#0F172A] outline-none placeholder:text-[#c6c6cd]" />
-            </div>
-          </div>
-
-          {/* Payment method */}
-          <div>
-            <label className="block text-xs font-semibold text-[#45464d] uppercase tracking-wider mb-2">Payment Method</label>
-            <div className="flex bg-[#f2f4f6] rounded-2xl p-1">
-              {[
-                { val: "online", label: "Online",  icon: "credit_card" },
-                { val: "cash",   label: "Cash",    icon: "payments"    },
-              ].map(m => (
-                <button key={m.val} type="button" onClick={() => setPayMethod(m.val)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 ${payMethod === m.val ? "bg-white text-[#0F172A] shadow-sm" : "text-[#45464d]"}`}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>{m.icon}</span>
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Price breakdown */}
-          {amount && Number(amount) > 0 && (
-            <div className="bg-white rounded-2xl p-4 border border-[#f2f4f6] shadow-sm space-y-2">
-              <div className="flex justify-between text-sm text-[#45464d]">
-                <span>Service Charge</span>
-                <span>{formatCurrency(Number(amount))}</span>
-              </div>
-              <div className="flex justify-between text-sm text-[#45464d]">
-                <span>Platform Fee (10%)</span>
-                <span>{formatCurrency(platformFee)}</span>
-              </div>
-              <div className="border-t border-[#f2f4f6] pt-2 flex justify-between font-headline font-bold">
-                <span className="text-[#0F172A]">Total Amount</span>
-                <span className="text-[#F97316] text-lg">{formatCurrency(totalAmount)}</span>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Confirm button */}
-        <button onClick={handleBooking} disabled={submitting}
-          className="w-full mt-6 bg-[#131b2e] text-white py-4 rounded-2xl font-headline font-bold text-base hover:bg-[#1e2a45] active:scale-[0.98] transition-all disabled:opacity-60 flex items-center justify-center gap-2">
-          {submitting && <Spinner />}
-          {submitting ? "Processing…" : `Confirm Booking →`}
+        {/* Date & Time */}
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 space-y-4">
+          <p className="text-xs font-bold text-[#374151] uppercase tracking-wider">Schedule *</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-[#64748B] font-semibold block mb-1.5 flex items-center gap-1"><CalendarIcon size={12}/> Date</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} min={new Date().toISOString().split("T")[0]}
+                className="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-3 text-sm text-[#0F172A] outline-none focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/10 transition-all" />
+            </div>
+            <div>
+              <label className="text-xs text-[#64748B] font-semibold block mb-1.5 flex items-center gap-1"><ClockIcon size={12}/> Time</label>
+              <input type="time" value={time} onChange={e => setTime(e.target.value)}
+                className="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-3 text-sm text-[#0F172A] outline-none focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/10 transition-all" />
+            </div>
+          </div>
+        </div>
+
+        {/* Hours */}
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold text-[#374151] uppercase tracking-wider">Estimated Hours</p>
+            <span className="font-black text-[#0F172A]">{hours}h</span>
+          </div>
+          <input type="range" min={1} max={8} value={hours} onChange={e => setHours(Number(e.target.value))} className="w-full accent-[#F97316]" />
+          <div className="flex justify-between text-[10px] text-[#94A3B8] mt-1"><span>1h</span><span>4h</span><span>8h</span></div>
+        </div>
+
+        {/* Address */}
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
+          <label className="text-xs font-bold text-[#374151] uppercase tracking-wider mb-2 block flex items-center gap-1"><MapPinIcon size={12}/> Service Address *</label>
+          <textarea value={address} onChange={e => setAddress(e.target.value)} rows={2}
+            placeholder="House/flat no., street, landmark, city…"
+            className="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm text-[#0F172A] outline-none focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/10 resize-none placeholder:text-[#CBD5E1] transition-all" />
+        </div>
+
+        {/* Description */}
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
+          <label className="text-xs font-bold text-[#374151] uppercase tracking-wider mb-2 block">Problem Description</label>
+          <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={3}
+            placeholder="Describe the issue or what needs to be done…"
+            className="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm text-[#0F172A] outline-none focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/10 resize-none placeholder:text-[#CBD5E1] transition-all" />
+        </div>
+
+        {/* Payment */}
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
+          <p className="text-xs font-bold text-[#374151] uppercase tracking-wider mb-3">Payment Method</p>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { id:"online", label:"Pay Online", sub:"Secure & instant", Icon: CreditCardIcon },
+              { id:"cash",   label:"Pay Cash",   sub:"After service",   Icon: CashIcon },
+            ].map(({ id, label, sub, Icon }) => (
+              <button key={id} type="button" onClick={() => setPayment(id)}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${payment === id ? "border-[#F97316] bg-[#FFF7ED]" : "border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#CBD5E1]"}`}>
+                <div className={`mb-2 ${payment === id ? "text-[#F97316]" : "text-[#94A3B8]"}`}><Icon size={20}/></div>
+                <p className={`text-sm font-bold ${payment === id ? "text-[#C2410C]" : "text-[#374151]"}`}>{label}</p>
+                <p className="text-[10px] text-[#94A3B8] mt-0.5">{sub}</p>
+                {payment === id && <div className="mt-2 flex items-center gap-1 text-[#22C55E] text-[10px] font-bold"><CheckIcon size={10}/> Selected</div>}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Price breakdown */}
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 space-y-3">
+          <p className="text-xs font-bold text-[#374151] uppercase tracking-wider">Price Breakdown</p>
+          {[
+            { label:`Service (${formatCurrency(worker?.ratePerHour||0)} × ${hours}h)`, val: formatCurrency(subtotal) },
+            { label:"Platform fee (5%)", val: formatCurrency(platformFee) },
+          ].map(r => (
+            <div key={r.label} className="flex justify-between text-sm text-[#64748B]">
+              <span>{r.label}</span><span className="font-semibold text-[#374151]">{r.val}</span>
+            </div>
+          ))}
+          <div className="border-t border-[#E2E8F0] pt-3 flex justify-between">
+            <span className="font-bold text-[#0F172A]">Total</span>
+            <span className="font-black text-[#F97316] text-xl">{formatCurrency(total)}</span>
+          </div>
+        </div>
+
+        {error && (
+          <div className="flex items-start gap-2 bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] text-sm rounded-xl px-4 py-3">
+            <AlertCircleIcon size={16}/>{error}
+          </div>
+        )}
+      </div>
+
+      {/* Sticky confirm */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-t border-[#E2E8F0] px-4 py-4">
+        <button onClick={handleBook} disabled={submitting}
+          className="w-full bg-[#0F172A] text-white py-4 rounded-xl font-bold text-base flex items-center justify-center gap-2 hover:bg-[#1E293B] active:scale-[0.98] transition-all disabled:opacity-50 max-w-md mx-auto">
+          {submitting ? <><Spinner size={20}/>Processing…</> : <><span>Confirm Booking · {formatCurrency(total)}</span><ArrowRightIcon size={18}/></>}
         </button>
       </div>
     </div>

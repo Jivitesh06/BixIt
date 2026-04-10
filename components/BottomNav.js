@@ -1,47 +1,49 @@
 "use client";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { HomeIcon, CalendarIcon, ChatIcon, UserIcon, BriefcaseIcon, TrendingUpIcon } from "./Icons";
 
-const clientItems = [
-  { icon: "home",        label: "Home",     href: "/client/dashboard" },
-  { icon: "event_note",  label: "Bookings", href: "/client/bookings"  },
-  { icon: "chat_bubble", label: "Chat",     href: "/client/chat"      },
-  { icon: "person",      label: "Profile",  href: "/client/profile"   },
+const CLIENT_NAV = [
+  { label: "Home",     href: "/client/dashboard", Icon: HomeIcon     },
+  { label: "Bookings", href: "/client/bookings",  Icon: CalendarIcon },
+  { label: "Chat",     href: "/client/chat",       Icon: ChatIcon     },
+  { label: "Profile",  href: "/client/profile",    Icon: UserIcon     },
 ];
 
-const workerItems = [
-  { icon: "home",        label: "Home",    href: "/worker/dashboard" },
-  { icon: "work",        label: "Jobs",    href: "/worker/jobs"      },
-  { icon: "chat_bubble", label: "Chat",    href: "/worker/chat"      },
-  { icon: "person",      label: "Profile", href: "/worker/profile"   },
+const WORKER_NAV = [
+  { label: "Home",     href: "/worker/dashboard", Icon: HomeIcon      },
+  { label: "Jobs",     href: "/worker/jobs",        Icon: BriefcaseIcon },
+  { label: "Chat",     href: "/worker/chat",        Icon: ChatIcon      },
+  { label: "Profile",  href: "/worker/profile",     Icon: UserIcon      },
 ];
 
 export default function BottomNav({ role = "client" }) {
   const pathname = usePathname();
-  const items = role === "worker" ? workerItems : clientItems;
+  const items = role === "worker" ? WORKER_NAV : CLIENT_NAV;
 
   return (
-    <nav className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-5 pt-3 bg-white/90 backdrop-blur-xl border-t border-gray-100 shadow-[0_-2px_24px_rgba(15,23,42,0.07)] md:hidden">
-      {items.map((item) => {
-        const active = pathname.startsWith(item.href);
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`flex flex-col items-center gap-0.5 min-w-[3rem] transition-colors duration-150 ${
-              active ? "text-[#0F172A]" : "text-slate-400 hover:text-[#F97316]"
-            }`}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 24 }}>
-              {item.icon}
-            </span>
-            <span className={`text-[10px] tracking-wide ${active ? "font-semibold" : "font-medium"}`}>
-              {item.label}
-            </span>
-            {active && <span className="w-1 h-1 bg-[#F97316] rounded-full mt-0.5" />}
-          </Link>
-        );
-      })}
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-[#E2E8F0]"
+      style={{ boxShadow: "0 -4px 24px rgba(15,23,42,0.06)" }}>
+      <div className="flex items-center justify-around px-2 pt-2 pb-safe-area">
+        {items.map(({ label, href, Icon }) => {
+          const isActive = pathname === href || pathname.startsWith(href + "?");
+          return (
+            <Link key={href} href={href}
+              className={`flex flex-col items-center gap-1 py-1 px-4 rounded-xl min-w-[60px] transition-all duration-200 ${isActive ? "text-[#F97316]" : "text-[#94A3B8] hover:text-[#64748B]"}`}>
+              <div className="relative">
+                <Icon size={22} />
+                {isActive && (
+                  <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#F97316] rounded-full" />
+                )}
+              </div>
+              <span className={`text-[10px] font-semibold tracking-wide ${isActive ? "text-[#F97316]" : ""}`}>
+                {label}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
     </nav>
   );
 }

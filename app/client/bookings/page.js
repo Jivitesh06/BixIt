@@ -259,14 +259,19 @@ export default function ClientBookings() {
   const [completing,    setCompleting]    = useState(null); // bookingId
 
   useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-    if (!authLoading && user && userRole === "worker") router.replace("/worker/dashboard");
-  }, [user, userRole, authLoading]);
+    if (authLoading) return;                              // wait for Firebase auth
+    if (!user) { router.replace("/login"); return; }      // not logged in
+    if (userRole === "worker") { router.replace("/worker/dashboard"); return; }
 
-  useEffect(() => {
-    if (!user) return;
-    getClientBookings(user.uid).then(b => { setBookings(b); setLoading(false); });
-  }, [user]);
+    setLoading(true);
+    getClientBookings(user.uid)
+      .then(b => {
+        console.log("[client/bookings] fetched:", b.length, b);
+        setBookings(b);
+      })
+      .catch(err => console.error("[client/bookings] error:", err))
+      .finally(() => setLoading(false));
+  }, [user, userRole, authLoading]);
 
   // ── Cancel ──────────────────────────────────────────────────────
   async function handleCancelConfirm(reason) {
@@ -365,6 +370,13 @@ export default function ClientBookings() {
   const pendingCount  = bookings.filter(b => b.status === "pending").length;
   const counterCount  = bookings.filter(b => b.status === "counter_offered").length;
   const activeCount   = bookings.filter(b => ["accepted","on_the_way","arrived","in_progress"].includes(b.status)).length;
+
+  // Show spinner while auth OR data is loading
+  if (authLoading || loading) return (
+    <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
+      <div className="w-10 h-10 rounded-full border-4 border-[#F97316] border-t-transparent animate-spin"/>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24">

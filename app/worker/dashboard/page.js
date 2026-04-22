@@ -101,15 +101,17 @@ export default function WorkerDashboard() {
   const [counterOpen,    setCounterOpen]    = useState(null); // bookingId showing inline counter
 
   useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-    if (!authLoading && user && userRole === "client") router.replace("/client/dashboard");
-  }, [user, userRole, authLoading]);
+    if (authLoading) return;
+    if (!user) { router.replace("/login"); return; }
+    if (userRole === "client") { router.replace("/client/dashboard"); return; }
 
-  useEffect(() => {
-    if (!user) return;
+    setLoading(true);
     getWorkerProfile(user.uid).then(setProfile);
-    getWorkerBookings(user.uid).then(b => { setBookings(b); setLoading(false); });
-  }, [user]);
+    getWorkerBookings(user.uid)
+      .then(b => { setBookings(b); })
+      .catch(err => console.error("[worker/dashboard] error:", err))
+      .finally(() => setLoading(false));
+  }, [user, userRole, authLoading]);
 
   async function handleLogout() { await signOut(auth); router.push("/"); }
 

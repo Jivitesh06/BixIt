@@ -17,7 +17,7 @@ import {
 export default function WorkerProfile() {
   const router   = useRouter();
   const addToast = useToast();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [profile, setProfile]   = useState(null);
   const [loading, setLoading]   = useState(true);
   const [saving,  setSaving]    = useState(false);
@@ -46,22 +46,28 @@ export default function WorkerProfile() {
   const aBackRef  = useRef();
 
   useEffect(() => {
-    if (!user) return;
-    getWorkerProfile(user.uid).then(p => {
-      if (!p) return;
-      setProfile(p);
-      setName(p.name || ""); setPhone(p.phone || ""); setCity(p.area || "");
-      setSkills(p.skills || []); setExp(p.experience || ""); setRate(p.ratePerHour || "");
-      setBio(p.bio || "");
-      setPhotoUrl(p.profilePhoto || null);
-      setPhotoPreview(p.profilePhoto || null);
-      setAadhaarFrontUrl(p.aadhaarFront || "");
-      setAadhaarFrontPrev(p.aadhaarFront || null);
-      setAadhaarBackUrl(p.aadhaarBack || "");
-      setAadhaarBackPrev(p.aadhaarBack || null);
-      setLoading(false);
-    });
-  }, [user]);
+    if (authLoading) return;
+    if (!user) { router.replace("/login"); return; }
+
+    setLoading(true);
+    getWorkerProfile(user.uid)
+      .then(p => {
+        if (p) {
+          setProfile(p);
+          setName(p.name || ""); setPhone(p.phone || ""); setCity(p.area || "");
+          setSkills(p.skills || []); setExp(p.experience || ""); setRate(p.ratePerHour || "");
+          setBio(p.bio || "");
+          setPhotoUrl(p.profilePhoto || null);
+          setPhotoPreview(p.profilePhoto || null);
+          setAadhaarFrontUrl(p.aadhaarFront || "");
+          setAadhaarFrontPrev(p.aadhaarFront || null);
+          setAadhaarBackUrl(p.aadhaarBack || "");
+          setAadhaarBackPrev(p.aadhaarBack || null);
+        }
+      })
+      .catch(err => console.error("[worker/profile] error:", err))
+      .finally(() => setLoading(false));
+  }, [user, authLoading]);
 
   function toggleSkill(id) {
     setSkills(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);

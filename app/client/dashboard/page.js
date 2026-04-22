@@ -112,15 +112,13 @@ export default function ClientDashboard() {
   const [cityModal, setCityModal] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-    if (!authLoading && user && userRole === "worker") router.replace("/worker/dashboard");
+    if (authLoading) return;
+    if (!user) { router.replace("/login"); return; }
+    if (userRole === "worker") { router.replace("/worker/dashboard"); return; }
+
+    getClientProfile(user.uid).then(p => { setProfile(p); if (p?.area) setCity(p.area); });
   }, [user, userRole, authLoading]);
 
-  useEffect(() => {
-    if (!user) return;
-    getClientProfile(user.uid).then(p => { setProfile(p); if (p?.area) setCity(p.area); });
-    fetchWorkers("all");
-  }, [user]);
 
   async function fetchWorkers(category) {
     setLoading(true);

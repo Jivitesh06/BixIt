@@ -6,7 +6,7 @@ import Link from "next/link";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
-import { getClientProfile, updateClientProfile, getClientBookings } from "@/lib/firestore";
+import { getClientProfile, createClientProfile, updateClientProfile, getClientBookings } from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
@@ -57,19 +57,34 @@ export default function ClientProfile() {
   const [city,  setCity]  = useState("");
 
   useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-    if (!authLoading && user && userRole === "worker") router.replace("/worker/dashboard");
-  }, [user, userRole, authLoading]);
+    if (authLoading) return;                              // wait for Firebase
+    if (!user) { router.replace("/login"); return; }
+    if (userRole === "worker") { router.replace("/worker/dashboard"); return; }
 
-  useEffect(() => {
-    if (!user) return;
+    setLoading(true);
     Promise.all([getClientProfile(user.uid), getClientBookings(user.uid)])
-      .then(([p, b]) => {
-        setProfile(p); setBookings(b);
-        setName(p?.name || ""); setPhone(p?.phone || ""); setCity(p?.area || "");
-        setLoading(false);
-      });
-  }, [user]);
+      .then(async ([p, b]) => {
+        let resolvedProfile = p;
+        // If no profile doc exists yet, create a stub so the page isn't blank
+        if (!resolvedProfile) {
+          const stub = {
+            name:  user.displayName || user.email?.split("@")[0] || "Client",
+            email: user.email || "",
+            phone: "",
+            area:  "",
+          };
+          await createClientProfile(user.uid, stub).catch(() => {});
+          resolvedProfile = stub;
+        }
+        setProfile(resolvedProfile);
+        setBookings(b || []);
+        setName(resolvedProfile.name  || "");
+        setPhone(resolvedProfile.phone || "");
+        setCity(resolvedProfile.area  || "");
+      })
+      .catch(err => console.error("[client/profile] fetch error:", err))
+      .finally(() => setLoading(false));
+  }, [user, userRole, authLoading]);
 
   async function handleSave() {
     setError(""); setSaving(true);
@@ -94,7 +109,7 @@ export default function ClientProfile() {
 
   if (authLoading || loading) return (
     <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
-      <div className="animate-spin w-10 h-10 rounded-full border-4 border-[#0F172A] border-t-transparent"/>
+      <div className="w-10 h-10 rounded-full border-4 border-[#F97316] border-t-transparent animate-spin"/>
     </div>
   );
 

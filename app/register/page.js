@@ -7,6 +7,7 @@ import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/
 import { auth } from "@/lib/firebase";
 import { createClientProfile, createWorkerProfile } from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
+import { uploadToCloudinary } from "@/lib/cloudinary";
 import LocationPicker from "@/components/LocationPicker";
 import {
   MailIcon, LockIcon, EyeIcon, EyeOffIcon, UserIcon, PhoneIcon,
@@ -72,7 +73,8 @@ export default function RegisterPage() {
   const [cConfirm, setCConfirm] = useState("");
 
   /* ── Worker fields ── */
-  const [wPhoto,    setWPhoto]    = useState(null);
+  const [wPhotoPreview, setWPhotoPreview] = useState(null); // local blob URL for instant preview
+  const [wPhotoFile,    setWPhotoFile]    = useState(null); // raw File for upload
   const [wName,     setWName]     = useState("");
   const [wEmail,    setWEmail]    = useState("");
   const [wPhone,    setWPhone]    = useState("");
@@ -83,19 +85,42 @@ export default function RegisterPage() {
   const [wExp,      setWExp]      = useState("");
   const [wRate,     setWRate]     = useState("");
   const [wAadhaar,  setWAadhaar]  = useState("");
-  const [wAFront,   setWAFront]   = useState(null);
-  const [wABack,    setWABack]    = useState(null);
+  const [wAFrontUrl,  setWAFrontUrl]  = useState(null); // Cloudinary URL
+  const [wABackUrl,   setWABackUrl]   = useState(null); // Cloudinary URL
+  const [wAFrontPrev, setWAFrontPrev] = useState(null); // local preview
+  const [wABackPrev,  setWABackPrev]  = useState(null);
+  const [uploadingPhoto,   setUploadingPhoto]   = useState(false);
+  const [uploadingAadhaar, setUploadingAadhaar] = useState(null); // "front"|"back"|null
   const photoRef  = useRef();
   const aFrontRef = useRef();
   const aBackRef  = useRef();
-
-  function readFile(file, setter) {
-    const r = new FileReader();
-    r.onload = ev => setter(ev.target.result);
-    r.readAsDataURL(file);
-  }
   function toggleSkill(id) {
     setWSkills(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
+  }
+
+  // Photo: show preview immediately, store file for later upload
+  function handlePhotoSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setWPhotoPreview(URL.createObjectURL(file));
+    setWPhotoFile(file);
+  }
+
+  // Aadhaar: upload immediately on select so admin sees it fast
+  async function handleAadhaarUpload(e, side) {
+    const file = e.target.files[0];
+    if (!file) return;
+    // Show local preview while uploading
+    const prev = URL.createObjectURL(file);
+    if (side === "front") setWAFrontPrev(prev);
+    else setWABackPrev(prev);
+    setUploadingAadhaar(side);
+    try {
+      const url = await uploadToCloudinary(file, "bixit/aadhaar");
+      if (side === "front") { setWAFrontUrl(url); }
+      else { setWABackUrl(url); }
+    } catch { /* keep preview, user can retry */ }
+    finally { setUploadingAadhaar(null); }
   }
 
   /* ── Client register ── */
@@ -130,6 +155,13 @@ export default function RegisterPage() {
     if (wSkills.length === 0) { setError("Select at least one skill."); return; }
     setLoading(true);
     try {
+      // Upload profile photo to Cloudinary first
+      let profilePhotoUrl = "";
+      if (wPhotoFile) {
+        setUploadingPhoto(true);
+        profilePhotoUrl = await uploadToCloudinary(wPhotoFile, "bixit/profiles");
+        setUploadingPhoto(false);
+      }
       const { user } = await createUserWithEmailAndPassword(auth, wEmail, wPass);
       await sendEmailVerification(user);
       await createWorkerProfile(user.uid, {
@@ -138,11 +170,12 @@ export default function RegisterPage() {
         skills: wSkills, experience: wExp,
         ratePerHour: Number(wRate) || 0,
         aadhaarNumber: wAadhaar.trim(),
-        aadhaarFront: wAFront || "", aadhaarBack: wABack || "",
-        profilePhoto: wPhoto || "",
+        aadhaarFront: wAFrontUrl || "",
+        aadhaarBack:  wABackUrl  || "",
+        profilePhoto: profilePhotoUrl,
       });
       router.push("/verify-email");
-    } catch (err) { setError(mapError(err.code)); }
+    } catch (err) { setError(mapError(err.code)); setUploadingPhoto(false); }
     finally { setLoading(false); }
   }
 
@@ -232,13 +265,16 @@ export default function RegisterPage() {
             <div className="flex flex-col items-center py-2">
               <button type="button" onClick={() => photoRef.current.click()}
                 className="relative w-20 h-20 rounded-full bg-[#F1F5F9] border-2 border-dashed border-[#CBD5E1] flex items-center justify-center overflow-hidden hover:border-[#F97316] transition-colors group cursor-pointer">
-                {wPhoto
-                  ? <img src={wPhoto} alt="Profile" className="w-full h-full object-cover"/>
-                  : <span className="text-[#94A3B8] group-hover:text-[#F97316]"><CameraIcon size={26}/></span>}
+                {uploadingPhoto
+                  ? <Spinner size={24} />
+                  : wPhotoPreview
+                    ? <img src={wPhotoPreview} alt="Profile" className="w-full h-full object-cover"/>
+                    : <span className="text-[#94A3B8] group-hover:text-[#F97316]"><CameraIcon size={26}/></span>}
               </button>
-              <input ref={photoRef} type="file" accept="image/*" className="hidden"
-                onChange={e => e.target.files[0] && readFile(e.target.files[0], setWPhoto)} />
-              <span className="text-xs text-[#94A3B8] mt-2">Profile photo (optional)</span>
+              <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
+              <span className="text-xs text-[#94A3B8] mt-2">
+                {uploadingPhoto ? "Uploading…" : wPhotoPreview ? "✓ Photo selected" : "Profile photo (optional)"}
+              </span>
             </div>
 
             <InputRow label="Full Name *" icon={<UserIcon size={17}/>}>
@@ -316,17 +352,23 @@ export default function RegisterPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label:"Front Side", ref: aFrontRef, val: wAFront, setter: setWAFront },
-                  { label:"Back Side",  ref: aBackRef,  val: wABack,  setter: setWABack  },
-                ].map(({ label, ref, val, setter }) => (
+                  { label:"Front Side", ref: aFrontRef, side:"front", url: wAFrontUrl, prev: wAFrontPrev, uploading: uploadingAadhaar==="front" },
+                  { label:"Back Side",  ref: aBackRef,  side:"back",  url: wABackUrl,  prev: wABackPrev,  uploading: uploadingAadhaar==="back"  },
+                ].map(({ label, ref, side, url, prev, uploading }) => (
                   <div key={label}>
-                    <p className="text-xs font-semibold text-[#9A3412] mb-1.5">{label}</p>
-                    <label className={`flex flex-col items-center justify-center h-24 rounded-xl border-2 border-dashed cursor-pointer transition-colors overflow-hidden ${val ? "border-[#22C55E]" : "border-[#FED7AA] hover:border-[#F97316]"}`}>
-                      {val
-                        ? <img src={val} alt={label} className="w-full h-full object-cover"/>
-                        : <><UploadIcon size={20}/><span className="text-[10px] text-[#C2410C] mt-1">Upload photo</span></>}
+                    <p className="text-xs font-semibold text-[#9A3412] mb-1.5 flex items-center gap-1">
+                      {label}
+                      {url && <span className="text-[#22C55E] text-[10px]">✓ Uploaded</span>}
+                    </p>
+                    <label className={`flex flex-col items-center justify-center h-24 rounded-xl border-2 border-dashed cursor-pointer transition-colors overflow-hidden ${
+                      url ? "border-[#22C55E]" : prev ? "border-[#F97316]" : "border-[#FED7AA] hover:border-[#F97316]"}`}>
+                      {uploading
+                        ? <><Spinner size={20}/><span className="text-[10px] text-[#C2410C] mt-1">Uploading…</span></>
+                        : prev
+                          ? <img src={prev} alt={label} className="w-full h-full object-cover"/>
+                          : <><UploadIcon size={20}/><span className="text-[10px] text-[#C2410C] mt-1">Upload photo</span></>}
                       <input ref={ref} type="file" accept="image/*" className="hidden"
-                        onChange={e => e.target.files[0] && readFile(e.target.files[0], setter)} />
+                        onChange={e => handleAadhaarUpload(e, side)} />
                     </label>
                   </div>
                 ))}

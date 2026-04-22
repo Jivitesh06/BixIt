@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getWorkerProfile, getWorkerReviews } from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
 import { getWorkerBadge, formatCurrency } from "@/lib/utils";
+import { getOptimizedUrl } from "@/lib/cloudinary";
 import {
   StarIcon, MapPinIcon, CheckIcon, ArrowRightIcon, ArrowLeftIcon,
   ShieldIcon, ClockIcon, WorkIcon, ChevronRightIcon
@@ -70,7 +71,7 @@ export default function WorkerProfilePage() {
       <div className="px-4 -mt-14 relative z-10 mb-5">
         <div className="flex items-end justify-between mb-4">
           <div className="w-24 h-24 rounded-full border-4 border-white bg-white shadow-lg overflow-hidden flex-shrink-0">
-            <Avatar name={worker.name} photo={worker.profilePhoto} size={96} />
+            <Avatar name={worker.name} photo={getOptimizedUrl(worker.profilePhoto, 200)} size={96} />
           </div>
           {worker.isVerified && (
             <span className="flex items-center gap-1.5 bg-[#F0FDF4] border border-[#BBF7D0] text-[#16A34A] text-xs font-bold px-3 py-1.5 rounded-full">
@@ -122,6 +123,24 @@ export default function WorkerProfilePage() {
           <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
             <h3 className="font-bold text-[#0F172A] mb-2">About</h3>
             <p className="text-sm text-[#64748B] leading-relaxed">{worker.bio}</p>
+          </div>
+        )}
+
+        {/* Recent Work Photos */}
+        {worker.workPhotos?.length > 0 && (
+          <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
+            <h3 className="font-bold text-[#0F172A] mb-3">Recent Work</h3>
+            <div className="grid grid-cols-3 gap-2">
+              {worker.workPhotos.slice(0, 6).map((url, i) => (
+                <img
+                  key={i}
+                  src={getOptimizedUrl(url, 400)}
+                  alt={`Work photo ${i+1}`}
+                  className="rounded-xl object-cover w-full aspect-square cursor-pointer hover:opacity-90 transition-opacity"
+                  onClick={() => window.open(url, "_blank")}
+                />
+              ))}
+            </div>
           </div>
         )}
 

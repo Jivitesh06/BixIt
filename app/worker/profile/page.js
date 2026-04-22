@@ -8,6 +8,7 @@ import { SERVICE_CATEGORIES } from "@/lib/constants";
 import LocationPicker from "@/components/LocationPicker";
 import BottomNav from "@/components/BottomNav";
 import { useToast } from "@/components/Toast";
+import { uploadToCloudinary, getOptimizedUrl } from "@/lib/cloudinary";
 import {
   CameraIcon, UserIcon, MailIcon, PhoneIcon, BadgeIcon,
   CheckIcon, ArrowRightIcon, AlertCircleIcon, Spinner, ShieldIcon
@@ -23,7 +24,10 @@ export default function WorkerProfile() {
   const [error,   setError]     = useState("");
 
   // Editable fields
-  const [photo, setPhoto]       = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null); // blob URL for preview
+  const [photoFile,    setPhotoFile]    = useState(null); // File to upload
+  const [photoUrl,     setPhotoUrl]     = useState(null); // confirmed Cloudinary URL
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [name, setName]         = useState("");
   const [phone, setPhone]       = useState("");
   const [city, setCity]         = useState("");
@@ -31,7 +35,15 @@ export default function WorkerProfile() {
   const [exp, setExp]           = useState("");
   const [rate, setRate]         = useState("");
   const [bio, setBio]           = useState("");
-  const photoRef = useRef();
+  // Aadhaar
+  const [aadhaarFrontUrl,  setAadhaarFrontUrl]  = useState("");
+  const [aadhaarBackUrl,   setAadhaarBackUrl]   = useState("");
+  const [aadhaarFrontPrev, setAadhaarFrontPrev] = useState(null);
+  const [aadhaarBackPrev,  setAadhaarBackPrev]  = useState(null);
+  const [uploadingAadhaar, setUploadingAadhaar] = useState(null);
+  const photoRef  = useRef();
+  const aFrontRef = useRef();
+  const aBackRef  = useRef();
 
   useEffect(() => {
     if (!user) return;
@@ -40,7 +52,13 @@ export default function WorkerProfile() {
       setProfile(p);
       setName(p.name || ""); setPhone(p.phone || ""); setCity(p.area || "");
       setSkills(p.skills || []); setExp(p.experience || ""); setRate(p.ratePerHour || "");
-      setBio(p.bio || ""); setPhoto(p.profilePhoto || null);
+      setBio(p.bio || "");
+      setPhotoUrl(p.profilePhoto || null);
+      setPhotoPreview(p.profilePhoto || null);
+      setAadhaarFrontUrl(p.aadhaarFront || "");
+      setAadhaarFrontPrev(p.aadhaarFront || null);
+      setAadhaarBackUrl(p.aadhaarBack || "");
+      setAadhaarBackPrev(p.aadhaarBack || null);
       setLoading(false);
     });
   }, [user]);
@@ -49,10 +67,26 @@ export default function WorkerProfile() {
     setSkills(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
   }
 
-  function readFile(file) {
-    const r = new FileReader();
-    r.onload = ev => setPhoto(ev.target.result);
-    r.readAsDataURL(file);
+  function handlePhotoSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setPhotoPreview(URL.createObjectURL(file));
+    setPhotoFile(file);
+  }
+
+  async function handleAadhaarUpload(e, side) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const prev = URL.createObjectURL(file);
+    if (side === "front") setAadhaarFrontPrev(prev);
+    else setAadhaarBackPrev(prev);
+    setUploadingAadhaar(side);
+    try {
+      const url = await uploadToCloudinary(file, "bixit/aadhaar");
+      if (side === "front") setAadhaarFrontUrl(url);
+      else setAadhaarBackUrl(url);
+    } catch { addToast("Aadhaar upload failed. Try again.", "error"); }
+    finally { setUploadingAadhaar(null); }
   }
 
   async function handleSave(e) {
@@ -61,25 +95,30 @@ export default function WorkerProfile() {
     if (!name) { setError("Name is required."); return; }
     setSaving(true);
     try {
+      // Upload profile photo if a new file was selected
+      let finalPhotoUrl = photoUrl || "";
+      if (photoFile) {
+        setUploadingPhoto(true);
+        finalPhotoUrl = await uploadToCloudinary(photoFile, "bixit/profiles");
+        setPhotoUrl(finalPhotoUrl);
+        setUploadingPhoto(false);
+      }
       await updateWorkerProfile(user.uid, {
         name, phone, area: city, skills, experience: exp,
-        ratePerHour: Number(rate), bio, profilePhoto: photo || "",
+        ratePerHour: Number(rate), bio,
+        profilePhoto: finalPhotoUrl,
+        aadhaarFront: aadhaarFrontUrl,
+        aadhaarBack:  aadhaarBackUrl,
       });
       addToast("Profile saved successfully!", "success");
     } catch { setError("Failed to save. Please try again."); addToast("Failed to save profile.", "error"); }
-    finally { setSaving(false); }
+    finally { setSaving(false); setUploadingPhoto(false); }
   }
 
   if (loading) return <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center"><div className="animate-spin w-10 h-10 rounded-full border-4 border-[#0F172A] border-t-transparent"/></div>;
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24">
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] bg-[#0F172A] text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2">
-          <CheckIcon size={15}/>{toast}
-        </div>
-      )}
 
       {/* Header */}
       <div className="bg-white border-b border-[#E2E8F0] px-4 py-4 sticky top-0 z-40">
@@ -92,28 +131,54 @@ export default function WorkerProfile() {
         <div className="flex flex-col items-center py-2">
           <button type="button" onClick={() => photoRef.current.click()}
             className="relative w-24 h-24 rounded-full bg-[#F8FAFC] border-2 border-dashed border-[#CBD5E1] flex items-center justify-center overflow-hidden hover:border-[#F97316] transition-colors group">
-            {photo ? <img src={photo} alt="Profile" className="w-full h-full object-cover" />
-              : <span className="text-[#94A3B8] group-hover:text-[#F97316] transition-colors"><CameraIcon size={28}/></span>}
+            {uploadingPhoto
+              ? <Spinner size={26}/>
+              : photoPreview
+                ? <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
+                : <span className="text-[#94A3B8] group-hover:text-[#F97316] transition-colors"><CameraIcon size={28}/></span>}
           </button>
-          <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && readFile(e.target.files[0])} />
-          <span className="text-xs text-[#94A3B8] mt-2">Tap to change photo</span>
+          <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
+          <span className="text-xs text-[#94A3B8] mt-2">
+            {uploadingPhoto ? "Uploading…" : photoPreview ? "✓ Photo selected" : "Tap to change photo"}
+          </span>
         </div>
 
-        {/* Aadhaar status */}
-        <div className={`rounded-2xl p-4 flex items-start gap-3 border ${profile?.isVerified ? "bg-[#F0FDF4] border-[#BBF7D0]" : "bg-[#FFF7ED] border-[#FED7AA]"}`}>
-          <ShieldIcon size={18}/>
-          <div>
-            <p className={`font-bold text-sm ${profile?.isVerified ? "text-[#166534]" : "text-[#9A3412]"}`}>
-              {profile?.isVerified ? "✓ Aadhaar Verified" : "Aadhaar Verification Pending"}
-            </p>
-            <p className={`text-xs mt-0.5 ${profile?.isVerified ? "text-[#16A34A]" : "text-[#C2410C]"}`}>
-              {profile?.isVerified ? "Your profile shows a verified badge." : "Our team will verify your Aadhaar soon."}
-            </p>
-            {profile?.aadhaarNumber && (
-              <p className="text-xs text-[#94A3B8] mt-1 font-mono">
-                XXXX XXXX {profile.aadhaarNumber.slice(-4)}
+        {/* Aadhaar status + upload */}
+        <div className={`rounded-2xl p-4 border space-y-3 ${profile?.isVerified ? "bg-[#F0FDF4] border-[#BBF7D0]" : "bg-[#FFF7ED] border-[#FED7AA]"}` }>
+          <div className="flex items-start gap-3">
+            <ShieldIcon size={18}/>
+            <div className="flex-1">
+              <p className={`font-bold text-sm ${profile?.isVerified ? "text-[#166534]" : "text-[#9A3412]"}`}>
+                {profile?.isVerified ? "✓ Aadhaar Verified" : "Aadhaar Verification Pending"}
               </p>
-            )}
+              <p className={`text-xs mt-0.5 ${profile?.isVerified ? "text-[#16A34A]" : "text-[#C2410C]"}`}>
+                {profile?.isVerified ? "Your profile shows a verified badge." : "Our team will verify your Aadhaar soon."}
+              </p>
+              {profile?.aadhaarNumber && (
+                <p className="text-xs text-[#94A3B8] mt-1 font-mono">XXXX XXXX {profile.aadhaarNumber.slice(-4)}</p>
+              )}
+            </div>
+          </div>
+          {/* Aadhaar photo upload */}
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label:"Front", side:"front", url:aadhaarFrontUrl, prev:aadhaarFrontPrev, ref:aFrontRef, uploading:uploadingAadhaar==="front" },
+              { label:"Back",  side:"back",  url:aadhaarBackUrl,  prev:aadhaarBackPrev,  ref:aBackRef,  uploading:uploadingAadhaar==="back"  },
+            ].map(({ label, side, url, prev, ref, uploading }) => (
+              <div key={label}>
+                <p className="text-xs font-semibold text-[#9A3412] mb-1.5 flex items-center gap-1">
+                  {label} {url && <span className="text-[#22C55E] text-[10px]">✓ Uploaded</span>}
+                </p>
+                <label className={`flex flex-col items-center justify-center h-20 rounded-xl border-2 border-dashed cursor-pointer transition-colors overflow-hidden ${url ? "border-[#22C55E]" : prev ? "border-[#F97316]" : "border-[#FED7AA] hover:border-[#F97316]"}`}>
+                  {uploading
+                    ? <><Spinner size={18}/><span className="text-[10px] text-[#C2410C] mt-1">Uploading…</span></>
+                    : prev
+                      ? <img src={prev} alt={label} className="w-full h-full object-cover"/>
+                      : <><BadgeIcon size={18}/><span className="text-[10px] text-[#C2410C] mt-1">Upload {label}</span></>}
+                  <input ref={ref} type="file" accept="image/*" className="hidden" onChange={e => handleAadhaarUpload(e, side)} />
+                </label>
+              </div>
+            ))}
           </div>
         </div>
 

@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getBooking, getWorkerBookings, updateBookingStatus } from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
 import { formatCurrency, getStatusStyle } from "@/lib/utils";
+import { uploadToCloudinary } from "@/lib/cloudinary";
 import BottomNav from "@/components/BottomNav";
 import StatusBadge from "@/components/StatusBadge";
 import { NavigationIcon, ClockIcon, CheckIcon, ArrowRightIcon, UploadIcon, AlertCircleIcon, Spinner, XIcon } from "@/components/Icons";
@@ -142,7 +143,10 @@ export default function WorkerJobs() {
   const [actLoading, setActLoading] = useState(false);
   const [error,      setError]      = useState("");
   const [otpError,   setOtpError]   = useState("");
-  const [photo,      setPhoto]      = useState(null);
+  // Cloudinary photo state
+  const [workPhotoUrls,   setWorkPhotoUrls]   = useState([]); // uploaded cloudinary URLs
+  const [workPreviews,    setWorkPreviews]    = useState([]); // local blob previews
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [showOtp,    setShowOtp]    = useState(false);
   const photoRef = useRef();
 
@@ -155,10 +159,23 @@ export default function WorkerJobs() {
     getBooking(bookingId).then(b => { setBooking(b); setLoading(false); });
   }, [bookingId, user]);
 
-  function readFile(file) {
-    const r = new FileReader();
-    r.onload = ev => setPhoto(ev.target.result);
-    r.readAsDataURL(file);
+  async function handleWorkPhotos(e) {
+    const files = Array.from(e.target.files).slice(0, 3 - workPhotoUrls.length);
+    if (!files.length) return;
+    // Show local previews immediately
+    const previews = files.map(f => URL.createObjectURL(f));
+    setWorkPreviews(prev => [...prev, ...previews].slice(0, 3));
+    setUploadingPhotos(true);
+    try {
+      const urls = await Promise.all(files.map(f => uploadToCloudinary(f, "bixit/work-photos")));
+      setWorkPhotoUrls(prev => [...prev, ...urls].slice(0, 3));
+    } catch { setError("Photo upload failed. Try again."); }
+    finally { setUploadingPhotos(false); }
+  }
+
+  function removePhoto(i) {
+    setWorkPhotoUrls(prev => prev.filter((_,idx) => idx !== i));
+    setWorkPreviews(prev => prev.filter((_,idx) => idx !== i));
   }
 
   async function handleAction(step) {
@@ -172,10 +189,11 @@ export default function WorkerJobs() {
           res();
         }, res, { timeout:5000 }));
       }
-      if (step.requiresPhoto && photo) extra.workPhoto = photo;
+      // Attach Cloudinary photo URLs on completion
+      if (step.requiresPhoto && workPhotoUrls.length > 0) extra.workPhotos = workPhotoUrls;
       await updateBookingStatus(bookingId, step.next, extra);
       setBooking(prev => ({ ...prev, status: step.next, ...extra }));
-      setShowOtp(false); setPhoto(null);
+      setShowOtp(false); setWorkPhotoUrls([]); setWorkPreviews([]);
     } catch { setError("Failed to update. Try again."); }
     finally { setActLoading(false); }
   }
@@ -272,17 +290,45 @@ export default function WorkerJobs() {
         {/* Photo upload */}
         {step?.requiresPhoto && (
           <div>
-            <p className="text-xs font-bold text-[#374151] uppercase tracking-wider mb-2">Upload Work Photo</p>
-            <label className={`flex flex-col items-center justify-center h-36 rounded-2xl border-2 border-dashed cursor-pointer transition-colors overflow-hidden ${photo ? "border-[#22C55E]" : "border-[#CBD5E1] hover:border-[#F97316]"}`}>
-              {photo ? <img src={photo} alt="Work" className="w-full h-full object-cover"/> : <><UploadIcon size={28}/><span className="text-sm text-[#94A3B8] mt-2">Upload before/after photo</span></>}
-              <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && readFile(e.target.files[0])} />
-            </label>
+            <p className="text-xs font-bold text-[#374151] uppercase tracking-wider mb-2">
+              Work Photos <span className="text-[#94A3B8] normal-case font-normal">({workPhotoUrls.length}/3 uploaded)</span>
+            </p>
+            {/* Thumbnail grid */}
+            {workPreviews.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {workPreviews.map((prev, i) => (
+                  <div key={i} className="relative rounded-xl overflow-hidden aspect-square">
+                    <img src={prev} alt={`Work ${i+1}`} className="w-full h-full object-cover" />
+                    {/* show green tick if URL uploaded, grey spinner if pending */}
+                    {workPhotoUrls[i]
+                      ? <div className="absolute top-1 right-1 w-5 h-5 bg-[#22C55E] rounded-full flex items-center justify-center"><CheckIcon size={10}/></div>
+                      : <div className="absolute top-1 right-1 w-5 h-5 bg-black/30 rounded-full flex items-center justify-center"><Spinner size={10}/></div>}
+                    <button type="button" onClick={() => removePhoto(i)}
+                      className="absolute bottom-1 right-1 w-5 h-5 bg-[#EF4444] rounded-full flex items-center justify-center">
+                      <XIcon size={8}/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {uploadingPhotos && (
+              <p className="text-xs text-[#F97316] flex items-center gap-1 mb-2"><Spinner size={13}/> Uploading photos…</p>
+            )}
+            {workPreviews.length < 3 && (
+              <label className="flex flex-col items-center justify-center h-24 rounded-2xl border-2 border-dashed cursor-pointer transition-colors border-[#CBD5E1] hover:border-[#F97316]">
+                <UploadIcon size={24}/>
+                <span className="text-sm text-[#94A3B8] mt-2">Add work photos (max 3)</span>
+                <input ref={photoRef} type="file" accept="image/*" multiple className="hidden"
+                  onChange={handleWorkPhotos} />
+              </label>
+            )}
           </div>
         )}
 
         {/* Action button */}
         {step && booking.status !== "completed" && !showOtp && (
-          <button onClick={() => step.requiresOtp ? setShowOtp(true) : handleAction(step)} disabled={actLoading || (step.requiresPhoto && !photo)}
+          <button onClick={() => step.requiresOtp ? setShowOtp(true) : handleAction(step)}
+            disabled={actLoading || (step.requiresPhoto && workPhotoUrls.length === 0) || uploadingPhotos}
             className="w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50"
             style={{ backgroundColor: step.color }}>
             {actLoading ? <><Spinner size={20}/>{step.btnLabel}…</> : <><ArrowRightIcon size={18}/>{step.btnLabel}</>}

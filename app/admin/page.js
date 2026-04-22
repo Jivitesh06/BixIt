@@ -7,6 +7,7 @@ import {
 } from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
 import { formatCurrency } from "@/lib/utils";
+import { getOptimizedUrl } from "@/lib/cloudinary";
 import { CheckIcon, XIcon, ShieldIcon, AlertCircleIcon, Spinner } from "@/components/Icons";
 
 const ADMIN_PASSWORD = "bixit@admin2024";
@@ -177,15 +178,21 @@ export default function AdminPanel() {
                     const busy = actMap[w.id];
                     return (
                       <div key={w.id} className="bg-white rounded-2xl border border-[#E2E8F0] p-5">
-                        <div className="flex items-start justify-between gap-3 mb-3">
-                          <div>
+                        <div className="flex items-start gap-3 mb-3">
+                          {/* Worker photo */}
+                          <div className="w-12 h-12 rounded-xl overflow-hidden bg-[#F1F5F9] flex-shrink-0 flex items-center justify-center text-lg font-bold text-[#374151]">
+                            {w.profilePhoto
+                              ? <img src={getOptimizedUrl(w.profilePhoto, 100)} alt={w.name} className="w-full h-full object-cover"/>
+                              : w.name?.[0] || "W"}
+                          </div>
+                          <div className="flex-1">
                             <p className="font-bold text-[#0F172A]">{w.name}</p>
                             <p className="text-xs text-[#64748B]">{w.email}</p>
                             <p className="text-xs text-[#64748B]">📍 {w.area} · 📞 +91 {w.phone}</p>
                             {skills && <p className="text-xs text-[#94A3B8] mt-1">Skills: {skills}</p>}
                           </div>
                           {w.aadhaarNumber && (
-                            <div className="text-right">
+                            <div className="text-right flex-shrink-0">
                               <p className="text-xs text-[#94A3B8]">Aadhaar</p>
                               <p className="font-mono text-sm font-bold text-[#0F172A]">
                                 XXXX XXXX {w.aadhaarNumber.slice(-4)}
@@ -193,13 +200,20 @@ export default function AdminPanel() {
                             </div>
                           )}
                         </div>
-                        {/* Photo previews */}
+                        {/* Aadhaar image previews */}
                         {(w.aadhaarFront || w.aadhaarBack) && (
                           <div className="flex gap-3 mb-4">
                             {[{src:w.aadhaarFront,label:"Front"},{src:w.aadhaarBack,label:"Back"}].map(({src,label}) => src && (
                               <div key={label} className="flex-1">
                                 <p className="text-[10px] text-[#94A3B8] mb-1">{label}</p>
-                                <img src={src} alt={label} className="w-full h-28 object-cover rounded-xl border border-[#E2E8F0]" />
+                                <a href={src} target="_blank" rel="noopener noreferrer">
+                                  <img
+                                    src={getOptimizedUrl(src, 300)}
+                                    alt={label}
+                                    className="w-full h-28 object-cover rounded-xl border border-[#E2E8F0] cursor-pointer hover:opacity-90 transition-opacity"
+                                    title="Click to view full size"
+                                  />
+                                </a>
                               </div>
                             ))}
                           </div>

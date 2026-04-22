@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
@@ -56,7 +56,7 @@ function InputRow({ label, icon, error, children }) {
   );
 }
 
-export default function RegisterPage() {
+function RegisterPageInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const initialTab   = searchParams.get("role") === "worker" ? "worker" : "client";
@@ -398,5 +398,19 @@ export default function RegisterPage() {
         )}
       </div>
     </div>
+  );
+}
+
+const Loader = () => (
+  <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
+    <div className="w-10 h-10 rounded-full border-4 border-[#F97316] border-t-transparent animate-spin"/>
+  </div>
+);
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<Loader />}>
+      <RegisterPageInner />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
@@ -131,7 +131,7 @@ function JobsList({ workerId }) {
 }
 
 // ─── Job detail (with bookingId in URL) ──────────────────────────
-export default function WorkerJobs() {
+function WorkerJobsInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const bookingId    = searchParams.get("bookingId");
@@ -425,5 +425,18 @@ export default function WorkerJobs() {
 
       <BottomNav role="worker" />
     </div>
+  );
+}
+const Loader = () => (
+  <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
+    <div className="w-10 h-10 rounded-full border-4 border-[#F97316] border-t-transparent animate-spin"/>
+  </div>
+);
+
+export default function WorkerJobs() {
+  return (
+    <Suspense fallback={<Loader />}>
+      <WorkerJobsInner />
+    </Suspense>
   );
 }

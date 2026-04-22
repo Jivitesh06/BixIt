@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { ChatListView, ChatRoomView } from "@/components/ChatRoom";
 
-const Spinner = () => (
+const Loader = () => (
   <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
     <div className="w-10 h-10 rounded-full border-4 border-[#F97316] border-t-transparent animate-spin"/>
   </div>
 );
 
-export default function ClientChat() {
+function ClientChatInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const bookingId    = searchParams.get("bookingId");
@@ -21,11 +21,8 @@ export default function ClientChat() {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading]);
 
-  // Still waiting for Firebase to tell us who the user is
-  if (authLoading) return <Spinner />;
-
-  // Auth done but no user — will redirect via useEffect, show spinner meanwhile
-  if (!user) return <Spinner />;
+  if (authLoading) return <Loader />;
+  if (!user)       return <Loader />;
 
   if (!bookingId)
     return <ChatListView userId={user.uid} role="client" />;
@@ -38,5 +35,13 @@ export default function ClientChat() {
       role="client"
       profile={profile}
     />
+  );
+}
+
+export default function ClientChat() {
+  return (
+    <Suspense fallback={<Loader />}>
+      <ClientChatInner />
+    </Suspense>
   );
 }

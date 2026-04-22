@@ -4,22 +4,19 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { getBooking, getWorkerBookings, updateBookingStatus } from "@/lib/firestore";
+import { getBooking, getWorkerBookings, updateBookingStatus, createNotification } from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
-import { formatCurrency, getStatusStyle } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { uploadToCloudinary } from "@/lib/cloudinary";
+import { useToast } from "@/components/Toast";
 import BottomNav from "@/components/BottomNav";
 import StatusBadge from "@/components/StatusBadge";
-import { NavigationIcon, ClockIcon, CheckIcon, ArrowRightIcon, UploadIcon, AlertCircleIcon, Spinner, XIcon } from "@/components/Icons";
+import {
+  NavigationIcon, ClockIcon, CheckIcon, ArrowRightIcon,
+  UploadIcon, AlertCircleIcon, Spinner, XIcon
+} from "@/components/Icons";
 
-const FLOW = [
-  { status:"accepted",    next:"on_the_way", btnLabel:"I'm On My Way",     color:"#3B82F6",  requiresGps:true  },
-  { status:"on_the_way",  next:"arrived",    btnLabel:"Mark Arrived",       color:"#8B5CF6"   },
-  { status:"arrived",     next:null,         btnLabel:"Enter Client OTP",   color:"#F97316",  requiresOtp:true  },
-  { status:"in_progress", next:"completed",  btnLabel:"Mark Job Complete",  color:"#22C55E",  requiresPhoto:true },
-];
-
-// ── 4-digit OTP inputs ───────────────────────────────────────────
+// ─── OTP input (5-digit) ─────────────────────────────────────────
 function OtpInput({ onVerify, error, loading }) {
   const [otp, setOtp] = useState(["","","","",""]);
   const refs = Array.from({length:5}, () => useRef());
@@ -56,7 +53,7 @@ function OtpInput({ onVerify, error, loading }) {
   );
 }
 
-// ── Job list (no bookingId) ──────────────────────────────────────
+// ─── Job list (no bookingId in URL) ──────────────────────────────
 function JobsList({ workerId }) {
   const router = useRouter();
   const [bookings, setBookings] = useState([]);
@@ -69,19 +66,20 @@ function JobsList({ workerId }) {
   }, [workerId]);
 
   const active    = bookings.filter(b => ["accepted","on_the_way","arrived","in_progress"].includes(b.status));
-  const pending   = bookings.filter(b => b.status === "pending");
-  const completed = bookings.filter(b => ["completed","cancelled"].includes(b.status));
-  const showing   = tab === "active" ? active : tab === "pending" ? pending : completed;
+  const pending   = bookings.filter(b => ["pending","counter_offered"].includes(b.status));
+  const history   = bookings.filter(b => ["completed","cancelled"].includes(b.status));
+  const showing   = tab === "active" ? active : tab === "pending" ? pending : history;
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24">
       <div className="bg-white border-b border-[#E2E8F0] px-4 pt-5 pb-3 sticky top-0 z-40">
         <h1 className="font-black text-2xl text-[#0F172A] mb-4">My Jobs</h1>
         <div className="flex bg-[#F8FAFC] rounded-xl p-1 border border-[#E2E8F0]">
-          {[["active","Active"],["pending","Requests"],["completed","History"]].map(([id,label]) => (
+          {[["active","Active"],["pending","Requests"],["history","History"]].map(([id,label]) => (
             <button key={id} onClick={() => setTab(id)}
               className={`flex-1 py-2.5 rounded-[10px] text-xs font-bold transition-all ${tab === id ? "bg-[#0F172A] text-white" : "text-[#64748B]"}`}>
               {label}
+              {id === "pending" && pending.length > 0 && <span className="ml-1 bg-[#F97316] text-white text-[9px] px-1.5 py-0.5 rounded-full">{pending.length}</span>}
             </button>
           ))}
         </div>
@@ -98,7 +96,8 @@ function JobsList({ workerId }) {
         ) : (
           showing.map(b => {
             const cat = SERVICE_CATEGORIES.find(c => (b.services||[]).includes(c.id));
-            const ss  = getStatusStyle(b.status);
+            const canManage = ["accepted","on_the_way","arrived","in_progress"].includes(b.status);
+            const displayAmt = b.finalAmount || b.offeredAmount || b.totalAmount || 0;
             return (
               <div key={b.id} className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
                 <div className="flex items-start justify-between mb-3">
@@ -110,14 +109,14 @@ function JobsList({ workerId }) {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-black text-[#F97316]">{formatCurrency(b.totalAmount||0)}</p>
+                    <p className="font-black text-[#F97316]">{formatCurrency(displayAmt)}</p>
                     <StatusBadge status={b.status} />
                   </div>
                 </div>
-                {["accepted","on_the_way","arrived","in_progress"].includes(b.status) && (
+                {canManage && (
                   <button onClick={() => router.push(`/worker/jobs?bookingId=${b.id}`)}
                     className="w-full py-2.5 rounded-xl bg-[#F97316] text-xs font-bold text-white hover:bg-[#EA580C] flex items-center justify-center gap-1.5">
-                    <ArrowRightIcon size={13}/> View Details
+                    <ArrowRightIcon size={13}/> View & Manage Job
                   </button>
                 )}
               </div>
@@ -131,23 +130,25 @@ function JobsList({ workerId }) {
   );
 }
 
-// ── Job detail (with bookingId) ──────────────────────────────────
+// ─── Job detail (with bookingId in URL) ──────────────────────────
 export default function WorkerJobs() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const bookingId    = searchParams.get("bookingId");
+  const addToast     = useToast();
   const { user, loading: authLoading } = useAuth();
 
-  const [booking,    setBooking]    = useState(null);
-  const [loading,    setLoading]    = useState(true);
-  const [actLoading, setActLoading] = useState(false);
-  const [error,      setError]      = useState("");
-  const [otpError,   setOtpError]   = useState("");
-  // Cloudinary photo state
-  const [workPhotoUrls,   setWorkPhotoUrls]   = useState([]); // uploaded cloudinary URLs
-  const [workPreviews,    setWorkPreviews]    = useState([]); // local blob previews
+  const [booking,       setBooking]       = useState(null);
+  const [loading,       setLoading]       = useState(true);
+  const [actLoading,    setActLoading]    = useState(false);
+  const [error,         setError]         = useState("");
+  const [otpError,      setOtpError]      = useState("");
+  const [showOtp,       setShowOtp]       = useState(false);
+
+  // Cloudinary work photos
+  const [workPhotoUrls,   setWorkPhotoUrls]   = useState([]);
+  const [workPreviews,    setWorkPreviews]    = useState([]);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
-  const [showOtp,    setShowOtp]    = useState(false);
   const photoRef = useRef();
 
   useEffect(() => {
@@ -162,7 +163,6 @@ export default function WorkerJobs() {
   async function handleWorkPhotos(e) {
     const files = Array.from(e.target.files).slice(0, 3 - workPhotoUrls.length);
     if (!files.length) return;
-    // Show local previews immediately
     const previews = files.map(f => URL.createObjectURL(f));
     setWorkPreviews(prev => [...prev, ...previews].slice(0, 3));
     setUploadingPhotos(true);
@@ -178,26 +178,52 @@ export default function WorkerJobs() {
     setWorkPreviews(prev => prev.filter((_,idx) => idx !== i));
   }
 
-  async function handleAction(step) {
-    setError(""); setActLoading(true);
+  // ── On the way ──────────────────────────────────────────────────
+  async function handleOnTheWay() {
+    setActLoading(true); setError("");
     try {
-      let extra = {};
-      // Save GPS when going on_the_way
-      if (step.requiresGps && navigator.geolocation) {
+      let workerLocation = null;
+      if (navigator.geolocation) {
         await new Promise(res => navigator.geolocation.getCurrentPosition(pos => {
-          extra.workerLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude, updatedAt: { seconds: Date.now()/1000 } };
+          workerLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude, updatedAt: { seconds: Date.now()/1000 } };
           res();
-        }, res, { timeout:5000 }));
+        }, res, { timeout: 5000 }));
       }
-      // Attach Cloudinary photo URLs on completion
-      if (step.requiresPhoto && workPhotoUrls.length > 0) extra.workPhotos = workPhotoUrls;
-      await updateBookingStatus(bookingId, step.next, extra);
-      setBooking(prev => ({ ...prev, status: step.next, ...extra }));
-      setShowOtp(false); setWorkPhotoUrls([]); setWorkPreviews([]);
+      await updateBookingStatus(bookingId, "on_the_way", workerLocation ? { workerLocation } : {});
+      await createNotification(booking.clientId, {
+        title: "Worker on the way 🛵",
+        body: "Worker is heading to your location",
+        type: "on_the_way",
+        bookingId,
+        href: "/client/bookings",
+      }).catch(() => {});
+      setBooking(prev => ({ ...prev, status: "on_the_way", ...(workerLocation ? { workerLocation } : {}) }));
+      addToast("Status updated — heading to client!", "success");
     } catch { setError("Failed to update. Try again."); }
     finally { setActLoading(false); }
   }
 
+  // ── Arrived ─────────────────────────────────────────────────────
+  async function handleArrived() {
+    setActLoading(true); setError("");
+    try {
+      // Re-use existing arrivalOtp from booking (set at creation), or generate new
+      const otp = booking.arrivalOtp || Math.floor(10000 + Math.random() * 90000).toString();
+      await updateBookingStatus(bookingId, "arrived", { arrivalOtp: otp });
+      await createNotification(booking.clientId, {
+        title: "Worker has arrived! 📍",
+        body: "Show your OTP to start the job",
+        type: "arrived",
+        bookingId,
+        href: "/client/bookings",
+      }).catch(() => {});
+      setBooking(prev => ({ ...prev, status: "arrived", arrivalOtp: otp }));
+      addToast("Marked as arrived! Ask client for OTP.", "success");
+    } catch { setError("Failed to update. Try again."); }
+    finally { setActLoading(false); }
+  }
+
+  // ── OTP verify ──────────────────────────────────────────────────
   async function handleOtpVerify(code) {
     setOtpError(""); setActLoading(true);
     if (String(code) !== String(booking?.arrivalOtp)) {
@@ -208,13 +234,35 @@ export default function WorkerJobs() {
       await updateBookingStatus(bookingId, "in_progress");
       setBooking(prev => ({ ...prev, status: "in_progress" }));
       setShowOtp(false);
+      addToast("Job started! 🔧", "success");
     } catch { setOtpError("Verification failed. Try again."); }
+    finally { setActLoading(false); }
+  }
+
+  // ── Mark complete ───────────────────────────────────────────────
+  async function handleComplete() {
+    setActLoading(true); setError("");
+    try {
+      await updateBookingStatus(bookingId, "completed", { workPhotos: workPhotoUrls });
+      setBooking(prev => ({ ...prev, status: "completed", workPhotos: workPhotoUrls }));
+      addToast("Job complete! 🎉 Payment will be processed.", "success");
+    } catch { setError("Failed to complete. Try again."); }
+    finally { setActLoading(false); }
+  }
+
+  // ── Cash received ───────────────────────────────────────────────
+  async function handleCashReceived() {
+    setActLoading(true);
+    try {
+      await updateBookingStatus(bookingId, "completed", { cashConfirmed: true });
+      setBooking(prev => ({ ...prev, cashConfirmed: true }));
+      addToast("Cash payment confirmed! ✅", "success");
+    } catch { setError("Failed. Try again."); }
     finally { setActLoading(false); }
   }
 
   if (authLoading || loading) return <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center"><div className="animate-spin w-10 h-10 rounded-full border-4 border-[#0F172A] border-t-transparent"/></div>;
 
-  // Show job list if no bookingId in URL
   if (!bookingId) return <JobsList workerId={user?.uid} />;
 
   if (!booking) return (
@@ -226,8 +274,9 @@ export default function WorkerJobs() {
   );
 
   const cat  = SERVICE_CATEGORIES.find(c => (booking.services||[]).includes(c.id));
-  const step = FLOW.find(f => f.status === booking.status);
   const STATUSES = ["accepted","on_the_way","arrived","in_progress","completed"];
+  const currentIdx = STATUSES.indexOf(booking.status);
+  const displayAmt = booking.finalAmount || booking.offeredAmount || booking.totalAmount || 0;
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24">
@@ -251,7 +300,7 @@ export default function WorkerJobs() {
               <p className="font-bold text-[#0F172A]">{booking.clientName||"Client"}</p>
               <p className="text-sm text-[#64748B]">{cat ? `${cat.icon} ${cat.label}` : "Service"}</p>
             </div>
-            <p className="font-black text-[#F97316] text-xl">{formatCurrency(booking.totalAmount||0)}</p>
+            <p className="font-black text-[#F97316] text-xl">{formatCurrency(displayAmt)}</p>
           </div>
           <div className="flex items-center gap-2 text-xs text-[#94A3B8]">
             <ClockIcon size={12}/>{booking.scheduledDate} · {booking.scheduledTime}
@@ -259,13 +308,12 @@ export default function WorkerJobs() {
           {booking.description && <p className="text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl p-3 mt-3">{booking.description}</p>}
         </div>
 
-        {/* Progress */}
+        {/* Progress stepper */}
         <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
           <p className="text-xs font-bold text-[#374151] uppercase tracking-wider mb-4">Progress</p>
           <div className="space-y-3">
             {STATUSES.map((s, i) => {
-              const idx = STATUSES.indexOf(booking.status);
-              const isDone = idx > i || booking.status === s;
+              const isDone    = currentIdx > i || booking.status === s;
               const isCurrent = booking.status === s;
               return (
                 <div key={s} className="flex items-center gap-3">
@@ -284,26 +332,51 @@ export default function WorkerJobs() {
         {/* Error */}
         {error && <div className="flex items-start gap-2 bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] text-sm rounded-xl px-4 py-3"><AlertCircleIcon size={16}/>{error}</div>}
 
-        {/* OTP entry */}
-        {showOtp && step?.requiresOtp && <OtpInput onVerify={handleOtpVerify} error={otpError} loading={actLoading} />}
+        {/* ── STATUS: accepted ── */}
+        {booking.status === "accepted" && (
+          <button onClick={handleOnTheWay} disabled={actLoading}
+            className="w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 bg-[#3B82F6] hover:bg-[#2563EB] disabled:opacity-50 transition-all">
+            {actLoading ? <><Spinner size={20}/>Updating…</> : <>🛵 I'm On My Way</>}
+          </button>
+        )}
 
-        {/* Photo upload */}
-        {step?.requiresPhoto && (
-          <div>
-            <p className="text-xs font-bold text-[#374151] uppercase tracking-wider mb-2">
+        {/* ── STATUS: on_the_way ── */}
+        {booking.status === "on_the_way" && (
+          <button onClick={handleArrived} disabled={actLoading}
+            className="w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 bg-[#8B5CF6] hover:bg-[#7C3AED] disabled:opacity-50 transition-all">
+            {actLoading ? <><Spinner size={20}/>Updating…</> : <>📍 I've Arrived</>}
+          </button>
+        )}
+
+        {/* ── STATUS: arrived ── */}
+        {booking.status === "arrived" && (
+          <>
+            {!showOtp && (
+              <button onClick={() => setShowOtp(true)}
+                className="w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 bg-[#F97316] hover:bg-[#EA580C] transition-all">
+                🔑 Enter Client OTP to Start
+              </button>
+            )}
+            {showOtp && <OtpInput onVerify={handleOtpVerify} error={otpError} loading={actLoading} />}
+          </>
+        )}
+
+        {/* ── STATUS: in_progress ── */}
+        {booking.status === "in_progress" && (
+          <div className="space-y-3">
+            <p className="text-xs font-bold text-[#374151] uppercase tracking-wider">
               Work Photos <span className="text-[#94A3B8] normal-case font-normal">({workPhotoUrls.length}/3 uploaded)</span>
             </p>
-            {/* Thumbnail grid */}
+
             {workPreviews.length > 0 && (
-              <div className="grid grid-cols-3 gap-2 mb-3">
+              <div className="grid grid-cols-3 gap-2">
                 {workPreviews.map((prev, i) => (
                   <div key={i} className="relative rounded-xl overflow-hidden aspect-square">
                     <img src={prev} alt={`Work ${i+1}`} className="w-full h-full object-cover" />
-                    {/* show green tick if URL uploaded, grey spinner if pending */}
                     {workPhotoUrls[i]
                       ? <div className="absolute top-1 right-1 w-5 h-5 bg-[#22C55E] rounded-full flex items-center justify-center"><CheckIcon size={10}/></div>
                       : <div className="absolute top-1 right-1 w-5 h-5 bg-black/30 rounded-full flex items-center justify-center"><Spinner size={10}/></div>}
-                    <button type="button" onClick={() => removePhoto(i)}
+                    <button onClick={() => removePhoto(i)}
                       className="absolute bottom-1 right-1 w-5 h-5 bg-[#EF4444] rounded-full flex items-center justify-center">
                       <XIcon size={8}/>
                     </button>
@@ -311,35 +384,41 @@ export default function WorkerJobs() {
                 ))}
               </div>
             )}
-            {uploadingPhotos && (
-              <p className="text-xs text-[#F97316] flex items-center gap-1 mb-2"><Spinner size={13}/> Uploading photos…</p>
-            )}
+
+            {uploadingPhotos && <p className="text-xs text-[#F97316] flex items-center gap-1"><Spinner size={13}/> Uploading photos…</p>}
+
             {workPreviews.length < 3 && (
-              <label className="flex flex-col items-center justify-center h-24 rounded-2xl border-2 border-dashed cursor-pointer transition-colors border-[#CBD5E1] hover:border-[#F97316]">
+              <label className="flex flex-col items-center justify-center h-24 rounded-2xl border-2 border-dashed cursor-pointer border-[#CBD5E1] hover:border-[#F97316] transition-colors">
                 <UploadIcon size={24}/>
                 <span className="text-sm text-[#94A3B8] mt-2">Add work photos (max 3)</span>
-                <input ref={photoRef} type="file" accept="image/*" multiple className="hidden"
-                  onChange={handleWorkPhotos} />
+                <input ref={photoRef} type="file" accept="image/*" multiple className="hidden" onChange={handleWorkPhotos} />
               </label>
             )}
+
+            <button onClick={handleComplete}
+              disabled={actLoading || workPhotoUrls.length === 0 || uploadingPhotos}
+              className="w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-50 transition-all">
+              {actLoading ? <><Spinner size={20}/>Completing…</> : <><CheckIcon size={18}/>Mark Work Complete</>}
+            </button>
+            <p className="text-[11px] text-center text-[#94A3B8]">Upload at least 1 photo to complete</p>
           </div>
         )}
 
-        {/* Action button */}
-        {step && booking.status !== "completed" && !showOtp && (
-          <button onClick={() => step.requiresOtp ? setShowOtp(true) : handleAction(step)}
-            disabled={actLoading || (step.requiresPhoto && workPhotoUrls.length === 0) || uploadingPhotos}
-            className="w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50"
-            style={{ backgroundColor: step.color }}>
-            {actLoading ? <><Spinner size={20}/>{step.btnLabel}…</> : <><ArrowRightIcon size={18}/>{step.btnLabel}</>}
-          </button>
-        )}
-
+        {/* ── STATUS: completed ── */}
         {booking.status === "completed" && (
-          <div className="bg-[#F0FDF4] border border-[#BBF7D0] rounded-2xl p-5 text-center">
-            <div className="text-4xl mb-2">🎉</div>
-            <p className="font-bold text-[#166534] text-lg">Job Complete!</p>
-            <p className="text-sm text-[#16A34A] mt-1">Well done! Payment will be processed shortly.</p>
+          <div className="space-y-3">
+            <div className="bg-[#F0FDF4] border border-[#BBF7D0] rounded-2xl p-5 text-center">
+              <div className="text-4xl mb-2">🎉</div>
+              <p className="font-bold text-[#166534] text-lg">Job Complete!</p>
+              <p className="text-sm text-[#16A34A] mt-1">Well done! Payment will be processed shortly.</p>
+            </div>
+            {/* Cash confirmation button */}
+            {booking.paymentMethod === "cash" && !booking.cashConfirmed && (
+              <button onClick={handleCashReceived} disabled={actLoading}
+                className="w-full py-3 rounded-xl bg-[#22C55E] text-sm font-bold text-white hover:bg-[#16A34A] disabled:opacity-50 flex items-center justify-center gap-2">
+                {actLoading ? <Spinner size={15}/> : "💵"} Cash Received ✅
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -6,9 +6,12 @@ import Link from "next/link";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
-import { getWorkerProfile, getWorkerBookings, updateBookingStatus } from "@/lib/firestore";
+import {
+  getWorkerProfile, getWorkerBookings, updateBookingStatus, createNotification
+} from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
-import { formatCurrency, getStatusStyle } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
+import { useToast } from "@/components/Toast";
 import BottomNav from "@/components/BottomNav";
 import CancelModal from "@/components/CancelModal";
 import NotificationBell from "@/components/NotificationBell";
@@ -58,37 +61,44 @@ function ProfileMenu({ name, onLogout }) {
   );
 }
 
-function CounterModal({ booking, onSubmit, onClose }) {
-  const [amount, setAmount] = useState(booking?.totalAmount || "");
+// ─── Inline counter form ────────────────────────────────────────
+function InlineCounter({ booking, onSubmit, onClose, loading }) {
+  const [amount, setAmount] = useState(booking?.offeredAmount || booking?.totalAmount || "");
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-        <h3 className="font-bold text-[#0F172A] mb-1">Counter Offer</h3>
-        <p className="text-xs text-[#64748B] mb-4">Suggest a different price for this job</p>
-        <div className="flex items-center bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl overflow-hidden mb-5">
-          <span className="px-4 py-3.5 bg-[#F1F5F9] border-r border-[#E2E8F0] font-bold text-[#374151]">₹</span>
-          <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Enter amount"
-            className="flex-1 px-4 py-3.5 bg-transparent text-sm text-[#0F172A] outline-none" autoFocus />
-        </div>
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-[#E2E8F0] text-sm font-semibold text-[#374151] hover:bg-[#F8FAFC]">Cancel</button>
-          <button onClick={() => onSubmit(amount)} className="flex-1 py-3 rounded-xl bg-[#F97316] text-sm font-semibold text-white hover:bg-[#EA580C]">Send Offer</button>
-        </div>
+    <div className="mt-3 bg-[#FFF7ED] border border-[#FED7AA] rounded-xl p-4">
+      <p className="text-xs font-bold text-[#9A3412] mb-3">💬 Suggest your price</p>
+      <div className="flex items-center bg-white border border-[#E2E8F0] rounded-xl overflow-hidden mb-3">
+        <span className="px-4 py-3 bg-[#F8FAFC] border-r border-[#E2E8F0] font-bold text-[#374151]">₹</span>
+        <input type="number" value={amount} onChange={e => setAmount(e.target.value)}
+          placeholder="Enter your price" autoFocus
+          className="flex-1 px-4 py-3 bg-transparent text-sm text-[#0F172A] outline-none" />
+      </div>
+      <div className="flex gap-2">
+        <button onClick={() => onSubmit(amount)} disabled={loading || !amount}
+          className="flex-1 py-2.5 rounded-xl bg-[#F97316] text-sm font-bold text-white hover:bg-[#EA580C] disabled:opacity-50 flex items-center justify-center gap-1.5">
+          {loading ? <Spinner size={14}/> : null} Send Counter Offer
+        </button>
+        <button onClick={onClose} className="px-4 py-2.5 rounded-xl border border-[#E2E8F0] text-xs font-semibold text-[#64748B] hover:bg-[#F8FAFC]">
+          Cancel
+        </button>
       </div>
     </div>
   );
 }
 
 export default function WorkerDashboard() {
-  const router = useRouter();
+  const router   = useRouter();
+  const addToast = useToast();
   const { user, userRole, loading: authLoading } = useAuth();
-  const [profile,       setProfile]       = useState(null);
-  const [bookings,      setBookings]      = useState([]);
-  const [loading,       setLoading]       = useState(true);
-  const [counter,       setCounter]       = useState(null);
-  const [tab,           setTab]           = useState("pending");
-  const [cancelTarget,  setCancelTarget]  = useState(null);
-  const [cancelLoading, setCancelLoading] = useState(false);
+
+  const [profile,        setProfile]        = useState(null);
+  const [bookings,       setBookings]       = useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [tab,            setTab]            = useState("pending");
+  const [cancelTarget,   setCancelTarget]   = useState(null);
+  const [cancelLoading,  setCancelLoading]  = useState(false);
+  const [actionLoading,  setActionLoading]  = useState({}); // { [bookingId]: "accept"|"decline"|"counter" }
+  const [counterOpen,    setCounterOpen]    = useState(null); // bookingId showing inline counter
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -103,34 +113,94 @@ export default function WorkerDashboard() {
 
   async function handleLogout() { await signOut(auth); router.push("/"); }
 
-  async function handleAction(bookingId, status, extra = {}) {
-    await updateBookingStatus(bookingId, status, extra);
-    setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status } : b));
-    setCounter(null);
-  }
-
   async function handleCancelConfirm(reason) {
     if (!cancelTarget) return;
     setCancelLoading(true);
     await updateBookingStatus(cancelTarget.id, "cancelled", { cancelledBy: "worker", cancelReason: reason });
     setBookings(prev => prev.map(b => b.id === cancelTarget.id ? { ...b, status: "cancelled" } : b));
     setCancelLoading(false); setCancelTarget(null);
+    addToast("Booking cancelled.", "info");
+  }
+
+  // ── Accept ──────────────────────────────────────────────────────
+  async function handleAccept(booking) {
+    setActionLoading(m => ({ ...m, [booking.id]: "accept" }));
+    try {
+      const finalAmount = booking.offeredAmount || booking.totalAmount;
+      await updateBookingStatus(booking.id, "accepted", { finalAmount });
+      await createNotification(booking.clientId, {
+        title: "Request Accepted ✅",
+        body: `Your request has been accepted by ${profile?.name || "the worker"}`,
+        type: "accepted",
+        bookingId: booking.id,
+        href: "/client/bookings",
+      }).catch(() => {});
+      setBookings(prev => prev.map(b => b.id === booking.id ? { ...b, status: "accepted", finalAmount } : b));
+      addToast("Job accepted! 🎉", "success");
+    } catch {
+      addToast("Failed to accept. Try again.", "error");
+    } finally {
+      setActionLoading(m => ({ ...m, [booking.id]: null }));
+    }
+  }
+
+  // ── Decline ─────────────────────────────────────────────────────
+  async function handleDecline(booking) {
+    setActionLoading(m => ({ ...m, [booking.id]: "decline" }));
+    try {
+      await updateBookingStatus(booking.id, "cancelled", {
+        cancelledBy: "worker",
+        cancelReason: "Worker declined",
+      });
+      setBookings(prev => prev.map(b => b.id === booking.id ? { ...b, status: "cancelled" } : b));
+      addToast("Request declined.", "info");
+    } catch {
+      addToast("Failed to decline. Try again.", "error");
+    } finally {
+      setActionLoading(m => ({ ...m, [booking.id]: null }));
+    }
+  }
+
+  // ── Counter ─────────────────────────────────────────────────────
+  async function handleCounter(booking, workerPrice) {
+    const price = Number(workerPrice);
+    if (!price || price < 1) { addToast("Enter a valid amount.", "error"); return; }
+    setActionLoading(m => ({ ...m, [booking.id]: "counter" }));
+    try {
+      await updateBookingStatus(booking.id, "counter_offered", {
+        counterAmount: price,
+        counterMessage: `I can do this for ₹${price}`,
+      });
+      await createNotification(booking.clientId, {
+        title: "Counter Offer 💬",
+        body: `${profile?.name || "Worker"} suggested ₹${price} for your request`,
+        type: "counter",
+        bookingId: booking.id,
+        href: "/client/bookings",
+      }).catch(() => {});
+      setBookings(prev => prev.map(b => b.id === booking.id ? { ...b, status: "counter_offered", counterAmount: price } : b));
+      setCounterOpen(null);
+      addToast("Counter offer sent! 💬", "success");
+    } catch {
+      addToast("Failed to send counter. Try again.", "error");
+    } finally {
+      setActionLoading(m => ({ ...m, [booking.id]: null }));
+    }
   }
 
   const pending   = bookings.filter(b => b.status === "pending");
-  const active    = bookings.filter(b => ["accepted","on_the_way","arrived","in_progress"].includes(b.status));
+  const active    = bookings.filter(b => ["accepted","on_the_way","arrived","in_progress","counter_offered"].includes(b.status));
   const completed = bookings.filter(b => ["completed","cancelled"].includes(b.status));
   const showing   = tab === "pending" ? pending : tab === "active" ? active : completed;
 
-  const totalEarnings     = bookings.filter(b => b.status === "completed").reduce((a,b) => a + (b.workerAmount || b.totalAmount || 0), 0);
+  const totalEarnings     = bookings.filter(b => b.status === "completed").reduce((a,b) => a + (b.workerAmount || b.finalAmount || b.totalAmount || 0), 0);
   const thisMonthEarnings = bookings.filter(b => b.status === "completed" && (b.completedAt?.seconds || 0) > Date.now()/1000 - 2592000)
-                                    .reduce((a,b) => a + (b.workerAmount || b.totalAmount || 0), 0);
+                                    .reduce((a,b) => a + (b.workerAmount || b.finalAmount || b.totalAmount || 0), 0);
 
   if (authLoading) return <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center"><div className="animate-spin w-10 h-10 rounded-full border-4 border-[#0F172A] border-t-transparent"/></div>;
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24">
-      {counter   && <CounterModal booking={counter} onClose={() => setCounter(null)} onSubmit={amt => handleAction(counter.id, "counter_offered", { counterAmount: Number(amt) })} />}
       <CancelModal isOpen={!!cancelTarget} onClose={() => setCancelTarget(null)} onConfirm={handleCancelConfirm} role="worker" loading={cancelLoading} />
 
       {/* Topbar */}
@@ -199,7 +269,7 @@ export default function WorkerDashboard() {
           ))}
         </div>
 
-        {/* Booking cards */}
+        {/* Cards */}
         {loading ? (
           <div className="space-y-3">{[1,2].map(i=><div key={i} className="skeleton h-36 rounded-2xl"/>)}</div>
         ) : showing.length === 0 ? (
@@ -210,39 +280,84 @@ export default function WorkerDashboard() {
         ) : (
           showing.map(b => {
             const cat = SERVICE_CATEGORIES.find(c => (b.services||[]).includes(c.id));
-            const ss  = getStatusStyle(b.status);
+            const isPending   = b.status === "pending";
             const isActiveJob = ["accepted","on_the_way","arrived","in_progress"].includes(b.status);
+            const acLoading   = actionLoading[b.id];
+            const displayAmt  = b.finalAmount || b.counterAmount || b.offeredAmount || b.totalAmount || 0;
+
             return (
-              <div key={b.id} className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden" style={{ borderLeftWidth: 4, borderLeftColor: b.status === "pending" ? "#F97316" : isActiveJob ? "#3B82F6" : "#E2E8F0" }}>
+              <div key={b.id} className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden"
+                style={{ borderLeftWidth:4, borderLeftColor: isPending ? "#F97316" : isActiveJob ? "#3B82F6" : "#E2E8F0" }}>
                 <div className="p-4">
-                  <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="flex items-start justify-between gap-2 mb-2">
                     <div>
                       <p className="font-bold text-[#0F172A] text-sm">{b.clientName || "Client"}</p>
                       <p className="text-xs text-[#94A3B8]">{cat ? `${cat.icon} ${cat.label}` : "General service"}</p>
+                      {b.address && <p className="text-xs text-[#64748B] mt-0.5 flex items-center gap-1">📍 {b.address.split(",")[0]}</p>}
                     </div>
                     <div className="text-right">
-                      <p className="text-[#F97316] font-black text-xl">{formatCurrency(b.totalAmount || 0)}</p>
+                      <p className="text-[#F97316] font-black text-xl">{formatCurrency(displayAmt)}</p>
                       <StatusBadge status={b.status} />
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 text-[11px] text-[#94A3B8] mb-3">
+
+                  <div className="flex items-center gap-2 text-[11px] text-[#94A3B8] mb-2">
                     <ClockIcon size={12}/> {b.scheduledDate} · {b.scheduledTime}
                   </div>
-                  {b.description && <p className="text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl p-3 mb-3">{b.description}</p>}
 
-                  {b.status === "pending" && (
-                    <div className="flex gap-2">
-                      <button onClick={() => handleAction(b.id, "accepted")} className="flex-1 py-2.5 rounded-xl bg-[#0F172A] text-xs font-bold text-white hover:bg-[#1E293B] flex items-center justify-center gap-1.5"><CheckIcon size={13}/> Accept</button>
-                      <button onClick={() => setCounter(b)} className="flex-1 py-2.5 rounded-xl border border-[#F97316] text-xs font-bold text-[#F97316] hover:bg-[#FFF7ED]">Counter</button>
-                      <button onClick={() => handleAction(b.id, "declined")} className="px-3 py-2.5 rounded-xl border border-[#E2E8F0] text-xs font-bold text-[#EF4444] hover:bg-[#FEF2F2]"><XIcon size={13}/></button>
-                    </div>
+                  {b.description && (
+                    <p className="text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl p-3 mb-3 line-clamp-2">{b.description}</p>
                   )}
+
+                  {/* ── PENDING: Accept / Decline / Counter ── */}
+                  {isPending && (
+                    <>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleAccept(b)}
+                          disabled={!!acLoading}
+                          className="flex-1 py-2.5 rounded-xl bg-[#22C55E] text-xs font-bold text-white hover:bg-[#16A34A] disabled:opacity-50 flex items-center justify-center gap-1.5 transition-colors">
+                          {acLoading === "accept" ? <Spinner size={13}/> : <CheckIcon size={13}/>} Accept
+                        </button>
+                        <button onClick={() => setCounterOpen(counterOpen === b.id ? null : b.id)}
+                          disabled={!!acLoading}
+                          className="flex-1 py-2.5 rounded-xl border border-[#F97316] text-xs font-bold text-[#F97316] hover:bg-[#FFF7ED] disabled:opacity-50 transition-colors">
+                          💬 Counter
+                        </button>
+                        <button onClick={() => handleDecline(b)}
+                          disabled={!!acLoading}
+                          className="px-3 py-2.5 rounded-xl border border-[#FECACA] text-xs font-bold text-[#EF4444] hover:bg-[#FEF2F2] disabled:opacity-50 transition-colors">
+                          {acLoading === "decline" ? <Spinner size={13}/> : <XIcon size={13}/>}
+                        </button>
+                      </div>
+                      {counterOpen === b.id && (
+                        <InlineCounter
+                          booking={b}
+                          onClose={() => setCounterOpen(null)}
+                          onSubmit={amt => handleCounter(b, amt)}
+                          loading={acLoading === "counter"}
+                        />
+                      )}
+                    </>
+                  )}
+
+                  {/* ── ACTIVE: Manage job button ── */}
                   {isActiveJob && (
                     <div className="flex gap-2">
-                      <Link href={`/worker/jobs?bookingId=${b.id}`} className="flex-1 py-2.5 rounded-xl bg-[#F97316] text-xs font-bold text-white text-center hover:bg-[#EA580C] flex items-center justify-center gap-1.5">
+                      <Link href={`/worker/jobs?bookingId=${b.id}`}
+                        className="flex-1 py-2.5 rounded-xl bg-[#F97316] text-xs font-bold text-white text-center hover:bg-[#EA580C] flex items-center justify-center gap-1.5 transition-colors">
                         <ArrowRightIcon size={13}/> Manage Job
                       </Link>
-                      <button onClick={() => setCancelTarget(b)} className="px-3 py-2.5 rounded-xl border border-[#FECACA] text-xs font-bold text-[#EF4444] hover:bg-[#FEF2F2]"><XIcon size={13}/></button>
+                      <button onClick={() => setCancelTarget(b)}
+                        className="px-3 py-2.5 rounded-xl border border-[#FECACA] text-xs font-bold text-[#EF4444] hover:bg-[#FEF2F2] transition-colors">
+                        <XIcon size={13}/>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ── COUNTER OFFERED: waiting label ── */}
+                  {b.status === "counter_offered" && (
+                    <div className="mt-1 text-xs text-[#F97316] font-semibold flex items-center gap-1">
+                      💬 Counter sent: {formatCurrency(b.counterAmount || 0)} — waiting for client
                     </div>
                   )}
                 </div>

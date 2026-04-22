@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
-import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { getWorkerProfile, createBooking, processPayment, getClientProfile } from "@/lib/firestore";
+import { getWorkerProfile, createBooking, getClientProfile } from "@/lib/firestore";
 import { SERVICE_CATEGORIES, PLATFORM_COMMISSION } from "@/lib/constants";
 import { formatCurrency } from "@/lib/utils";
+import { useToast } from "@/components/Toast";
 import {
   ArrowLeftIcon, CalendarIcon, ClockIcon, MapPinIcon,
   CreditCardIcon, CashIcon, CheckIcon, ArrowRightIcon, Spinner, AlertCircleIcon
@@ -17,20 +17,21 @@ export default function BookingPage() {
   const params    = useParams();
   const workerId  = params?.workerId;
   const { user }  = useAuth();
+  const addToast  = useToast();
 
-  const [worker, setWorker]   = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError]     = useState("");
+  const [worker,        setWorker]        = useState(null);
+  const [loading,       setLoading]       = useState(true);
+  const [submitting,    setSubmitting]    = useState(false);
+  const [error,         setError]         = useState("");
   const [clientProfile, setClientProfile] = useState(null);
 
   const [services, setServices] = useState([]);
-  const [date, setDate]         = useState("");
-  const [time, setTime]         = useState("");
-  const [address, setAddress]   = useState("");
-  const [desc, setDesc]         = useState("");
-  const [payment, setPayment]   = useState("online");
-  const [hours, setHours]       = useState(2);
+  const [date,     setDate]     = useState("");
+  const [time,     setTime]     = useState("");
+  const [address,  setAddress]  = useState("");
+  const [desc,     setDesc]     = useState("");
+  const [payment,  setPayment]  = useState("online");
+  const [hours,    setHours]    = useState(2);
 
   useEffect(() => {
     if (!workerId) return;
@@ -52,7 +53,7 @@ export default function BookingPage() {
   const workerAmount = subtotal - platformFee;
   const total        = subtotal + platformFee;
 
-  async function handleBook() {
+  async function handleSendRequest() {
     setError("");
     if (services.length === 0) { setError("Please select at least one service."); return; }
     if (!date)    { setError("Please select a date."); return; }
@@ -61,46 +62,28 @@ export default function BookingPage() {
 
     setSubmitting(true);
     try {
-      if (payment === "online" && typeof window !== "undefined") {
-        const script = document.createElement("script");
-        script.src = "https://checkout.razorpay.com/v1/checkout.js";
-        document.body.appendChild(script);
-        script.onload = () => {
-          const rzp = new window.Razorpay({
-            key: process.env.NEXT_PUBLIC_RAZORPAY_KEY || "rzp_test_XXXXXXXX",
-            amount: total * 100,
-            currency: "INR",
-            name: "Bixit",
-            description: `Booking: ${services.join(", ")}`,
-            handler: async () => {
-              const bookingId = await saveBooking("online_paid");
-              await processPayment(bookingId, workerAmount, workerId);
-              router.push("/payment-success");
-            },
-            prefill: { email: user?.email || "" },
-            theme: { color: "#F97316" },
-          });
-          rzp.open();
-          setSubmitting(false);
-        };
-      } else {
-        await saveBooking("cash");
-        router.push("/payment-success");
-      }
-    } catch (e) { setError("Booking failed. Please try again."); setSubmitting(false); }
-  }
-
-  async function saveBooking(paymentMode) {
-    const clientName = clientProfile?.name || user?.email?.split("@")[0] || "Client";
-    const bookingId = await createBooking({
-      clientId: user.uid, workerId,
-      workerName: worker?.name, clientName,
-      services, scheduledDate: date, scheduledTime: time,
-      address, description: desc,
-      hours, totalAmount: total, platformFee, workerAmount, paymentMode,
-      status: "pending",
-    });
-    return bookingId;
+      const clientName = clientProfile?.name || user?.email?.split("@")[0] || "Client";
+      // Always create booking as pending — Razorpay only opens AFTER worker accepts
+      await createBooking({
+        clientId: user.uid, workerId,
+        workerName: worker?.name, clientName,
+        services, scheduledDate: date, scheduledTime: time,
+        address, description: desc,
+        hours,
+        offeredAmount: total,
+        totalAmount: total,
+        platformFee, workerAmount,
+        paymentMethod: payment,
+        paymentStatus: "pending",
+        finalAmount: null,
+        status: "pending",
+      });
+      addToast("Request sent! Waiting for worker response 🎉", "success");
+      router.push("/client/bookings");
+    } catch (e) {
+      setError("Failed to send request. Please try again.");
+      setSubmitting(false);
+    }
   }
 
   if (loading) return <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center"><div className="animate-spin w-10 h-10 rounded-full border-4 border-[#0F172A] border-t-transparent"/></div>;
@@ -134,6 +117,15 @@ export default function BookingPage() {
             </div>
           </div>
         )}
+
+        {/* How it works hint */}
+        <div className="bg-[#FFF7ED] border border-[#FED7AA] rounded-2xl p-3 flex items-start gap-2.5">
+          <span className="text-lg flex-shrink-0">💬</span>
+          <div>
+            <p className="text-xs font-bold text-[#9A3412]">How it works</p>
+            <p className="text-xs text-[#C2410C] mt-0.5">Send your request. The worker may accept your price or suggest a new one.</p>
+          </div>
+        </div>
 
         {/* Services */}
         <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
@@ -191,13 +183,13 @@ export default function BookingPage() {
             className="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm text-[#0F172A] outline-none focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/10 resize-none placeholder:text-[#CBD5E1] transition-all" />
         </div>
 
-        {/* Payment */}
+        {/* Payment method preference */}
         <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
-          <p className="text-xs font-bold text-[#374151] uppercase tracking-wider mb-3">Payment Method</p>
+          <p className="text-xs font-bold text-[#374151] uppercase tracking-wider mb-3">Payment Preference</p>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { id:"online", label:"Pay Online", sub:"Secure & instant", Icon: CreditCardIcon },
-              { id:"cash",   label:"Pay Cash",   sub:"After service",   Icon: CashIcon },
+              { id:"online", label:"Pay Online", sub:"After worker accepts", Icon: CreditCardIcon },
+              { id:"cash",   label:"Pay Cash",   sub:"After service done",  Icon: CashIcon },
             ].map(({ id, label, sub, Icon }) => (
               <button key={id} type="button" onClick={() => setPayment(id)}
                 className={`p-4 rounded-xl border-2 text-left transition-all ${payment === id ? "border-[#F97316] bg-[#FFF7ED]" : "border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#CBD5E1]"}`}>
@@ -212,19 +204,20 @@ export default function BookingPage() {
 
         {/* Price breakdown */}
         <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 space-y-3">
-          <p className="text-xs font-bold text-[#374151] uppercase tracking-wider">Price Breakdown</p>
+          <p className="text-xs font-bold text-[#374151] uppercase tracking-wider">Estimate</p>
           {[
             { label:`Service (${formatCurrency(worker?.ratePerHour||0)} × ${hours}h)`, val: formatCurrency(subtotal) },
-            { label:"Platform fee (5%)", val: formatCurrency(platformFee) },
+            { label:`Platform fee (${Math.round(PLATFORM_COMMISSION*100)}%)`, val: formatCurrency(platformFee) },
           ].map(r => (
             <div key={r.label} className="flex justify-between text-sm text-[#64748B]">
               <span>{r.label}</span><span className="font-semibold text-[#374151]">{r.val}</span>
             </div>
           ))}
           <div className="border-t border-[#E2E8F0] pt-3 flex justify-between">
-            <span className="font-bold text-[#0F172A]">Total</span>
+            <span className="font-bold text-[#0F172A]">Offered Amount</span>
             <span className="font-black text-[#F97316] text-xl">{formatCurrency(total)}</span>
           </div>
+          <p className="text-[11px] text-[#94A3B8] text-center">Worker may accept or suggest a new price</p>
         </div>
 
         {error && (
@@ -234,11 +227,11 @@ export default function BookingPage() {
         )}
       </div>
 
-      {/* Sticky confirm */}
+      {/* Sticky send button */}
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-t border-[#E2E8F0] px-4 py-4">
-        <button onClick={handleBook} disabled={submitting}
-          className="w-full bg-[#0F172A] text-white py-4 rounded-xl font-bold text-base flex items-center justify-center gap-2 hover:bg-[#1E293B] active:scale-[0.98] transition-all disabled:opacity-50 max-w-md mx-auto">
-          {submitting ? <><Spinner size={20}/>Processing…</> : <><span>Confirm Booking · {formatCurrency(total)}</span><ArrowRightIcon size={18}/></>}
+        <button onClick={handleSendRequest} disabled={submitting}
+          className="w-full bg-[#F97316] text-white py-4 rounded-xl font-bold text-base flex items-center justify-center gap-2 hover:bg-[#EA580C] active:scale-[0.98] transition-all disabled:opacity-50 max-w-md mx-auto">
+          {submitting ? <><Spinner size={20}/>Sending Request…</> : <><span>Send Request · {formatCurrency(total)}</span><ArrowRightIcon size={18}/></>}
         </button>
       </div>
     </div>

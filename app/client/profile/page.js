@@ -9,6 +9,8 @@ import { useAuth } from "@/context/AuthContext";
 import { getClientProfile, updateClientProfile, getClientBookings } from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
 import { formatCurrency } from "@/lib/utils";
+import { useToast } from "@/components/Toast";
+import StatusBadge from "@/components/StatusBadge";
 import BottomNav from "@/components/BottomNav";
 import LocationPicker from "@/components/LocationPicker";
 import {
@@ -39,13 +41,13 @@ function StatCard({ value, label, icon }) {
 }
 
 export default function ClientProfile() {
-  const router  = useRouter();
+  const router   = useRouter();
+  const addToast = useToast();
   const { user, userRole, loading: authLoading } = useAuth();
   const [profile,  setProfile]  = useState(null);
   const [bookings, setBookings] = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
-  const [toast,    setToast]    = useState("");
   const [error,    setError]    = useState("");
   const [editing,  setEditing]  = useState(false);
 
@@ -74,9 +76,9 @@ export default function ClientProfile() {
     try {
       await updateClientProfile(user.uid, { name, phone, area: city });
       setProfile(prev => ({ ...prev, name, phone, area: city }));
-      setToast("Profile saved ✓"); setTimeout(() => setToast(""), 3000);
+      addToast("Profile saved successfully!", "success");
       setEditing(false);
-    } catch { setError("Failed to save. Please try again."); }
+    } catch { setError("Failed to save. Please try again."); addToast("Failed to save profile.", "error"); }
     finally { setSaving(false); }
   }
 
@@ -98,12 +100,6 @@ export default function ClientProfile() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24">
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] bg-[#0F172A] text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2">
-          <CheckIcon size={14}/>{toast}
-        </div>
-      )}
 
       {/* Header */}
       <div className="bg-white border-b border-[#E2E8F0] px-4 py-4 sticky top-0 z-40 flex items-center justify-between">
@@ -231,9 +227,7 @@ export default function ClientProfile() {
                         <p className="text-xs text-[#94A3B8]">{b.scheduledDate}</p>
                       </div>
                     </div>
-                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full capitalize ${b.status === "completed" ? "bg-[#F0FDF4] text-[#16A34A]" : b.status === "cancelled" ? "bg-[#FEF2F2] text-[#DC2626]" : "bg-[#FFF7ED] text-[#C2410C]"}`}>
-                      {b.status?.replace(/_/g," ")}
-                    </span>
+                    <StatusBadge status={b.status} />
                   </div>
                 );
               })}

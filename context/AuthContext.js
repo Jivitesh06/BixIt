@@ -4,6 +4,14 @@ import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
+// Helpers to set/clear session cookie for middleware
+function setSessionCookie() {
+  document.cookie = "bixit_session=1; path=/; max-age=86400; SameSite=Lax";
+}
+function clearSessionCookie() {
+  document.cookie = "bixit_session=; path=/; max-age=0; SameSite=Lax";
+}
+
 const AuthContext = createContext({});
 
 export function AuthProvider({ children }) {
@@ -15,6 +23,7 @@ export function AuthProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
+        setSessionCookie();
         // Get user role from Firestore
         const clientDoc = await getDoc(doc(db, "clients", firebaseUser.uid));
         if (clientDoc.exists()) {
@@ -28,6 +37,7 @@ export function AuthProvider({ children }) {
       } else {
         setUser(null);
         setUserRole(null);
+        clearSessionCookie();
       }
       setLoading(false);
     });

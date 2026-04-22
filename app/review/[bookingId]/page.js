@@ -8,11 +8,10 @@ import { StarIcon, ArrowRightIcon, CheckCircleIcon, Spinner } from "@/components
 
 const TAGS = ["Professional","On time","Great quality","Clean work","Friendly","Fair price","Would rebook"];
 
-export default function ReviewPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const bookingId = searchParams.get("bookingId") || router.query?.bookingId;
-  const { user } = useAuth();
+export default function ReviewPage({ params }) {
+  const router    = useRouter();
+  const bookingId = params?.bookingId;
+  const { user }  = useAuth();
   const [booking, setBooking]   = useState(null);
   const [stars, setStars]       = useState(0);
   const [hover, setHover]       = useState(0);
@@ -22,14 +21,9 @@ export default function ReviewPage() {
   const [done, setDone]         = useState(false);
   const [error, setError]       = useState("");
 
-  // Get bookingId from URL path too
-  const bid = typeof window !== "undefined"
-    ? window.location.pathname.split("/review/")[1] || bookingId
-    : bookingId;
-
   useEffect(() => {
-    if (bid && user) getBooking(bid).then(setBooking);
-  }, [bid, user]);
+    if (bookingId && user) getBooking(bookingId).then(setBooking);
+  }, [bookingId, user]);
 
   function toggleTag(t) {
     setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);

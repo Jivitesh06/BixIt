@@ -12,6 +12,7 @@ import { formatCurrency, getStatusStyle } from "@/lib/utils";
 import BottomNav from "@/components/BottomNav";
 import CancelModal from "@/components/CancelModal";
 import NotificationBell from "@/components/NotificationBell";
+import StatusBadge from "@/components/StatusBadge";
 import {
   BellIcon, UserIcon, LogOutIcon, ChevronDownIcon, CheckIcon, XIcon,
   TrendingUpIcon, ClockIcon, BadgeIcon, ArrowRightIcon, ChatIcon, Spinner
@@ -221,7 +222,7 @@ export default function WorkerDashboard() {
                     </div>
                     <div className="text-right">
                       <p className="text-[#F97316] font-black text-xl">{formatCurrency(b.totalAmount || 0)}</p>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ss}`}>{b.status?.replace(/_/g," ").toUpperCase()}</span>
+                      <StatusBadge status={b.status} />
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-[#94A3B8] mb-3">

@@ -4,15 +4,16 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { getClientBookings, updateBookingStatus } from "@/lib/firestore";
+import { getClientBookings, updateBookingStatus, processPayment } from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
-import { formatCurrency, getStatusStyle } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { getGoogleMapsUrl, reverseGeocode } from "@/lib/location";
 import BottomNav from "@/components/BottomNav";
 import CancelModal from "@/components/CancelModal";
+import StatusBadge from "@/components/StatusBadge";
 import {
   CalendarIcon, ClockIcon, StarIcon, XIcon, CheckIcon,
-  ChatIcon, ArrowRightIcon, MapPinIcon, NavigationIcon
+  ChatIcon, ArrowRightIcon, MapPinIcon, NavigationIcon, Spinner
 } from "@/components/Icons";
 
 const STATUS_TABS = [
@@ -83,14 +84,14 @@ function WorkerLocationCard({ booking }) {
 }
 
 // ── Individual booking card ───────────────────────────────────────
-function BookingCard({ booking, onCancel }) {
+function BookingCard({ booking, onCancel, onConfirmComplete }) {
   const cat        = SERVICE_CATEGORIES.find(c => (booking.services||[]).includes(c.id));
-  const ss         = getStatusStyle(booking.status);
   const isActive   = ["accepted","on_the_way","arrived","in_progress"].includes(booking.status);
   const isPending  = booking.status === "pending";
   const isAccepted = booking.status === "accepted";
   const isArrived  = booking.status === "arrived";
   const isOnWay    = booking.status === "on_the_way";
+  const isProgress = booking.status === "in_progress";
   const isDone     = booking.status === "completed";
 
   return (
@@ -108,9 +109,7 @@ function BookingCard({ booking, onCancel }) {
           </div>
           <div className="text-right">
             <p className="font-black text-[#0F172A]">{formatCurrency(booking.totalAmount || 0)}</p>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ss}`}>
-              {STATUS_ICON[booking.status]} {booking.status?.replace(/_/g," ")}
-            </span>
+            <StatusBadge status={booking.status} />
           </div>
         </div>
 
@@ -138,6 +137,13 @@ function BookingCard({ booking, onCancel }) {
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-bold text-[#374151] hover:bg-[#F8FAFC] transition-colors">
               <ChatIcon size={12}/> Chat
             </Link>
+          )}
+          {/* Client confirms completion when worker marks complete */}
+          {isProgress && (
+            <button onClick={() => onConfirmComplete(booking)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#22C55E] text-xs font-bold text-white hover:bg-[#16A34A] transition-colors">
+              <CheckIcon size={12}/> Confirm Complete
+            </button>
           )}
           {isDone && !booking.hasReview && (
             <Link href={`/review/${booking.id}`}
@@ -187,6 +193,15 @@ export default function ClientBookings() {
     setCancelLoading(false); setCancelTarget(null);
   }
 
+  async function handleConfirmComplete(booking) {
+    await updateBookingStatus(booking.id, "completed");
+    // Process payment — worker gets their share minus platform commission
+    if (booking.workerId) {
+      await processPayment(booking.id, booking.workerAmount || booking.totalAmount, booking.workerId).catch(() => {});
+    }
+    setBookings(prev => prev.map(b => b.id === booking.id ? { ...b, status: "completed" } : b));
+  }
+
   const filtered = bookings.filter(b => {
     if (tab === "all")    return true;
     if (tab === "active") return ["accepted","on_the_way","arrived","in_progress"].includes(b.status);
@@ -229,7 +244,7 @@ export default function ClientBookings() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filtered.map(b => <BookingCard key={b.id} booking={b} onCancel={(booking) => setCancelTarget(booking)} />)}
+            {filtered.map(b => <BookingCard key={b.id} booking={b} onCancel={(booking) => setCancelTarget(booking)} onConfirmComplete={handleConfirmComplete} />)}
           </div>
         )}
       </div>

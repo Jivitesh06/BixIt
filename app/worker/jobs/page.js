@@ -8,6 +8,7 @@ import { getBooking, getWorkerBookings, updateBookingStatus } from "@/lib/firest
 import { SERVICE_CATEGORIES } from "@/lib/constants";
 import { formatCurrency, getStatusStyle } from "@/lib/utils";
 import BottomNav from "@/components/BottomNav";
+import StatusBadge from "@/components/StatusBadge";
 import { NavigationIcon, ClockIcon, CheckIcon, ArrowRightIcon, UploadIcon, AlertCircleIcon, Spinner, XIcon } from "@/components/Icons";
 
 const FLOW = [
@@ -109,7 +110,7 @@ function JobsList({ workerId }) {
                   </div>
                   <div className="text-right">
                     <p className="font-black text-[#F97316]">{formatCurrency(b.totalAmount||0)}</p>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ss}`}>{b.status?.replace(/_/g," ")}</span>
+                    <StatusBadge status={b.status} />
                   </div>
                 </div>
                 {["accepted","on_the_way","arrived","in_progress"].includes(b.status) && (

@@ -4,8 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { getWorkerProfile, createBooking } from "@/lib/firestore";
-import { SERVICE_CATEGORIES } from "@/lib/constants";
+import { getWorkerProfile, createBooking, processPayment, getClientProfile } from "@/lib/firestore";
+import { SERVICE_CATEGORIES, PLATFORM_COMMISSION } from "@/lib/constants";
 import { formatCurrency } from "@/lib/utils";
 import {
   ArrowLeftIcon, CalendarIcon, ClockIcon, MapPinIcon,
@@ -22,6 +22,7 @@ export default function BookingPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]     = useState("");
+  const [clientProfile, setClientProfile] = useState(null);
 
   const [services, setServices] = useState([]);
   const [date, setDate]         = useState("");
@@ -36,13 +37,19 @@ export default function BookingPage() {
     getWorkerProfile(workerId).then(w => { setWorker(w); setLoading(false); });
   }, [workerId]);
 
+  useEffect(() => {
+    if (!user) return;
+    getClientProfile(user.uid).then(p => setClientProfile(p));
+  }, [user]);
+
   function toggleService(id) {
     setServices(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
   }
 
   const workerSkills = (worker?.skills || []).map(id => SERVICE_CATEGORIES.find(c => c.id === id)).filter(Boolean);
   const subtotal     = (worker?.ratePerHour || 0) * hours;
-  const platformFee  = Math.round(subtotal * 0.05);
+  const platformFee  = Math.round(subtotal * PLATFORM_COMMISSION);
+  const workerAmount = subtotal - platformFee;
   const total        = subtotal + platformFee;
 
   async function handleBook() {
@@ -66,7 +73,8 @@ export default function BookingPage() {
             name: "Bixit",
             description: `Booking: ${services.join(", ")}`,
             handler: async () => {
-              await saveBooking("online_paid");
+              const bookingId = await saveBooking("online_paid");
+              await processPayment(bookingId, workerAmount, workerId);
               router.push("/payment-success");
             },
             prefill: { email: user?.email || "" },
@@ -83,14 +91,16 @@ export default function BookingPage() {
   }
 
   async function saveBooking(paymentMode) {
-    await createBooking({
+    const clientName = clientProfile?.name || user?.email?.split("@")[0] || "Client";
+    const bookingId = await createBooking({
       clientId: user.uid, workerId,
-      workerName: worker?.name, clientName: user?.displayName || "",
+      workerName: worker?.name, clientName,
       services, scheduledDate: date, scheduledTime: time,
       address, description: desc,
-      hours, totalAmount: total, paymentMode,
+      hours, totalAmount: total, platformFee, workerAmount, paymentMode,
       status: "pending",
     });
+    return bookingId;
   }
 
   if (loading) return <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center"><div className="animate-spin w-10 h-10 rounded-full border-4 border-[#0F172A] border-t-transparent"/></div>;

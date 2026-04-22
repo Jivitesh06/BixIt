@@ -8,8 +8,8 @@ import { auth } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { getClientProfile, getWorkersByCategory } from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
-import { getWorkerBadge, formatCurrency } from "@/lib/utils";
-import { INDIAN_CITIES } from "@/components/CityAutocomplete";
+import { INDIAN_CITIES } from "@/lib/location";
+import WorkerCard from "@/components/WorkerCard";
 import BottomNav from "@/components/BottomNav";
 import {
   SearchIcon, BellIcon, UserIcon, LogOutIcon, MapPinIcon,
@@ -95,68 +95,6 @@ function CityModal({ current, onSelect, onClose }) {
             </button>
           ))}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function WorkerCard({ worker }) {
-  const badge = getWorkerBadge(worker.completedJobs || 0);
-  const name  = worker.name || "Worker";
-  const cat   = SERVICE_CATEGORIES.find(c => c.id === (worker.skills || [])[0]);
-  const rating = worker.averageRating?.toFixed(1) || null;
-
-  return (
-    <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-      <div className="flex gap-3 mb-4">
-        <div className="relative flex-shrink-0">
-          <div className="w-14 h-14 rounded-2xl overflow-hidden bg-[#F1F5F9] flex items-center justify-center">
-            <Avatar name={name} photo={worker.profilePhoto} size={56} />
-          </div>
-          {worker.isVerified && (
-            <span className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#22C55E] rounded-full flex items-center justify-center border-2 border-white">
-              <CheckIcon size={10}/>
-            </span>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-1">
-            <p className="font-bold text-[#0F172A] text-sm truncate">{name}</p>
-            <p className="text-[#F97316] font-bold text-sm flex-shrink-0">{formatCurrency(worker.ratePerHour || 0)}<span className="text-[10px] font-normal text-[#94A3B8]">/hr</span></p>
-          </div>
-          {cat && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-[#FFF7ED] text-[#F97316] px-2 py-0.5 rounded-full mt-1">
-              {cat.icon} {cat.label}
-            </span>
-          )}
-          <div className="flex items-center gap-3 mt-1.5 text-[11px] text-[#64748B]">
-            {rating ? (
-              <span className="flex items-center gap-0.5 text-amber-500 font-bold">
-                <StarIcon size={11} fill="#F59E0B"/> {rating}
-                <span className="text-[#94A3B8] font-normal ml-0.5">({worker.totalReviews || 0})</span>
-              </span>
-            ) : <span className="text-[#94A3B8]">New</span>}
-            <span className="flex items-center gap-0.5">
-              <MapPinIcon size={11}/> {worker.area || "—"}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between mb-3 text-[10px]">
-        <span className="bg-[#F8FAFC] border border-[#E2E8F0] text-[#64748B] px-2.5 py-1 rounded-full font-semibold">{badge.icon} {badge.label}</span>
-        <span className="text-[#94A3B8]">{worker.completedJobs || 0} jobs done</span>
-      </div>
-
-      <div className="flex gap-2">
-        <Link href={`/worker-profile/${worker.id}`}
-          className="flex-1 py-2.5 rounded-xl border border-[#E2E8F0] text-xs font-bold text-[#374151] text-center hover:border-[#0F172A] transition-colors">
-          View Profile
-        </Link>
-        <Link href={`/booking/${worker.id}`}
-          className="flex-1 py-2.5 rounded-xl bg-[#0F172A] text-xs font-bold text-white text-center hover:bg-[#1E293B] active:scale-95 transition-all">
-          Book Now
-        </Link>
       </div>
     </div>
   );
@@ -287,7 +225,14 @@ export default function ClientDashboard() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filtered.map(w => <WorkerCard key={w.id} worker={w} />)}
+            {filtered.map(w => (
+              <WorkerCard
+                key={w.id}
+                worker={w}
+                onView={() => router.push(`/worker-profile/${w.id}`)}
+                onBook={() => router.push(`/booking/${w.id}`)}
+              />
+            ))}
           </div>
         )}
       </div>

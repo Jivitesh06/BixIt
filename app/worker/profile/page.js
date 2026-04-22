@@ -5,21 +5,22 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getWorkerProfile, updateWorkerProfile } from "@/lib/firestore";
 import { SERVICE_CATEGORIES } from "@/lib/constants";
-import CityAutocomplete from "@/components/CityAutocomplete";
+import LocationPicker from "@/components/LocationPicker";
 import BottomNav from "@/components/BottomNav";
+import { useToast } from "@/components/Toast";
 import {
   CameraIcon, UserIcon, MailIcon, PhoneIcon, BadgeIcon,
   CheckIcon, ArrowRightIcon, AlertCircleIcon, Spinner, ShieldIcon
 } from "@/components/Icons";
 
 export default function WorkerProfile() {
-  const router = useRouter();
+  const router   = useRouter();
+  const addToast = useToast();
   const { user } = useAuth();
   const [profile, setProfile]   = useState(null);
   const [loading, setLoading]   = useState(true);
-  const [saving, setSaving]     = useState(false);
-  const [toast, setToast]       = useState("");
-  const [error, setError]       = useState("");
+  const [saving,  setSaving]    = useState(false);
+  const [error,   setError]     = useState("");
 
   // Editable fields
   const [photo, setPhoto]       = useState(null);
@@ -64,9 +65,8 @@ export default function WorkerProfile() {
         name, phone, area: city, skills, experience: exp,
         ratePerHour: Number(rate), bio, profilePhoto: photo || "",
       });
-      setToast("Profile saved ✓");
-      setTimeout(() => setToast(""), 3000);
-    } catch { setError("Failed to save. Please try again."); }
+      addToast("Profile saved successfully!", "success");
+    } catch { setError("Failed to save. Please try again."); addToast("Failed to save profile.", "error"); }
     finally { setSaving(false); }
   }
 
@@ -142,7 +142,7 @@ export default function WorkerProfile() {
           </div>
           {/* City */}
           <div className="relative">
-            <CityAutocomplete value={city} onChange={setCity} label="Working City" placeholder="Search your city…" />
+            <LocationPicker value={city} onChange={setCity} label="Working City" />
           </div>
         </div>
 
